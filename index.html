@@ -1,20 +1,52 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-<meta charset="utf-8" />
+
+<meta charset="utf-8">
+
 <title>GPS Tracker</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
+
+body{
+margin:0;
+font-family:Arial;
+}
+
 #map{
 height:100vh;
+width:100%;
 }
+
+#panel{
+position:absolute;
+top:10px;
+left:10px;
+background:white;
+padding:10px;
+border-radius:8px;
+box-shadow:0 0 10px rgba(0,0,0,0.2);
+z-index:1000;
+}
+
 </style>
 
 </head>
 
 <body>
+
+<div id="panel">
+
+<b>GPS Tracker</b><br>
+
+Points: <input id="points" value="200" size="4">
+
+<button onclick="loadData()">Refresh</button>
+
+</div>
 
 <div id="map"></div>
 
@@ -22,53 +54,98 @@ height:100vh;
 
 <script>
 
-const sheetURL = "https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=100";
+// PANE SIIA OMA APPS SCRIPT URL
+const apiBase =
+"https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec";
 
-const map = L.map('map').setView([59.437, 24.753], 13);
+const map = L.map('map').setView([59.437,24.753],13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{
 maxZoom:19
 }).addTo(map);
 
-let marker;
-let polyline;
+let marker = null;
+let trackLine = null;
+
+let firstLoad = true;
 
 async function loadData(){
 
-const response = await fetch(sheetURL);
+let points = document.getElementById("points").value;
+
+const url = apiBase + "?api=points&points=" + points;
+
+try{
+
+const response = await fetch(url);
+
 const data = await response.json();
 
-const points = [];
+if(!data || data.length === 0) return;
 
-data.forEach(row=>{
-points.push([parseFloat(row.lat), parseFloat(row.lon)]);
+const coords = [];
+
+data.forEach(p=>{
+coords.push([p.lat,p.lon]);
 });
 
-if(points.length === 0) return;
-
-const last = points[points.length-1];
+const last = coords[coords.length-1];
 
 if(!marker){
+
 marker = L.marker(last).addTo(map);
+
 }else{
+
 marker.setLatLng(last);
+
 }
 
-if(polyline){
-map.removeLayer(polyline);
+let lastPoint = data[data.length-1];
+
+marker.bindPopup(
+"Time: " + lastPoint.time +
+"<br>Battery: " + lastPoint.battery +
+"<br>Signal: " + lastPoint.signal +
+"<br>Status: " + lastPoint.status
+);
+
+if(trackLine){
+
+map.removeLayer(trackLine);
+
 }
 
-polyline = L.polyline(points,{color:'red'}).addTo(map);
+trackLine = L.polyline(coords,{
+color:"red",
+weight:4
+}).addTo(map);
+
+if(firstLoad){
 
 map.setView(last,15);
+firstLoad = false;
 
 }
 
+}catch(e){
+
+console.log("API error",e);
+
+}
+
+}
+
+// esimene laadimine
 loadData();
 
+// auto refresh
 setInterval(loadData,5000);
 
 </script>
 
 </body>
+
 </html>
