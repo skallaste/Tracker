@@ -4,116 +4,126 @@
 <meta charset="utf-8">
 <title>GPS Tracker</title>
 
-<link rel="stylesheet"
-href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    font-family: Arial, sans-serif;
+  }
 
-html,body{
-margin:0;
-height:100%;
-font-family:Arial;
-}
+  #map {
+    height: 100%;
+    width: 100%;
+  }
 
-#map{
-height:100%;
-width:100%;
-}
+  /* PANEL */
+  #panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
+    width: 75px; /* Veidi laiem, et aku protsent ära mahuks */
+    background: rgba(30, 30, 30, 0.85);
+    color: white;
+    transition: width 0.3s ease;
+    z-index: 1000;
+    overflow-x: hidden;
+    overflow-y: auto;
+    backdrop-filter: blur(5px);
+    box-shadow: -2px 0 10px rgba(0,0,0,0.5);
+  }
 
-/* PANEL */
+  #panel.open {
+    width: 320px;
+  }
 
-#panel{
+  #mini {
+    padding: 15px 10px;
+    text-align: center;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
 
-position:absolute;
-top:0;
-right:0;
+  #mini:hover {
+    background: rgba(255,255,255,0.1);
+  }
 
-height:100%;
+  .stat {
+    margin: 15px 0;
+    font-size: 14px;
+    font-weight: bold;
+  }
 
-width:65px;
+  /* BATTERY BAR */
+  .progress {
+    width: 100%;
+    height: 12px;
+    background: #555;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 5px;
+  }
 
-background:rgba(30,30,30,0.75);
+  .progressBar {
+    height: 100%;
+    background: #4caf50;
+    width: 0%;
+    transition: width 0.5s ease, background-color 0.5s;
+  }
 
-color:white;
+  /* PANEL CONTENT */
+  #panelContent {
+    padding: 20px;
+    display: none;
+  }
 
-transition:0.3s;
+  #panel.open #panelContent {
+    display: block;
+  }
 
-z-index:1000;
+  /* GRAPH & SLIDERS */
+  #batteryChart {
+    width: 100%;
+    height: 200px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    padding: 5px;
+  }
 
-overflow:hidden;
+  .sliderBox {
+    margin-top: 25px;
+    background: rgba(0,0,0,0.2);
+    padding: 15px;
+    border-radius: 8px;
+  }
 
-backdrop-filter:blur(3px);
+  .sliderBox h3 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    color: #ccc;
+  }
 
-}
+  input[type=range] {
+    width: 100%;
+    cursor: pointer;
+  }
 
-#panel.open{
-width:320px;
-}
+  #pointCount, #timeIndicator {
+    text-align: center;
+    margin-top: 8px;
+    font-weight: bold;
+    color: #4caf50;
+  }
 
-#mini{
-
-padding:10px;
-text-align:center;
-cursor:pointer;
-
-}
-
-.stat{
-margin:10px 0;
-font-size:14px;
-}
-
-/* BATTERY BAR */
-
-.progress{
-
-width:100%;
-height:10px;
-background:#555;
-border-radius:5px;
-overflow:hidden;
-
-}
-
-.progressBar{
-
-height:100%;
-background:#4caf50;
-width:0%;
-
-}
-
-/* PANEL CONTENT */
-
-#panelContent{
-
-padding:15px;
-display:none;
-
-}
-
-#panel.open #panelContent{
-display:block;
-}
-
-/* GRAPH */
-
-#batteryChart{
-width:100%;
-height:200px;
-}
-
-.sliderBox{
-margin-top:20px;
-}
-
-#timeSlider{
-width:100%;
-}
-
+  #timeIndicator {
+    font-size: 14px;
+    margin-bottom: 10px;
+    color: #2196F3;
+  }
 </style>
 </head>
 
@@ -122,295 +132,272 @@ width:100%;
 <div id="map"></div>
 
 <div id="panel">
+  <div id="mini">
+    <div class="stat" id="clock">--:--</div>
+    <div class="stat">
+      <div class="progress">
+        <div class="progressBar" id="batteryBar"></div>
+      </div>
+      <div id="batteryPercent">--%</div>
+    </div>
+    <div class="stat" id="signal">📶 --</div>
+  </div>
 
-<div id="mini">
+  <div id="panelContent">
+    <h3>Aku pinge ajalugu</h3>
+    <canvas id="batteryChart"></canvas>
 
-<div class="stat" id="clock">--:--</div>
+    <div class="sliderBox">
+      <h3>Saba pikkus (punkte)</h3>
+      <input type="range" id="pointSlider" min="1" max="100" value="50">
+      <div id="pointCount">50</div>
+    </div>
 
-<div class="stat">
-
-<div class="progress">
-<div class="progressBar" id="batteryBar"></div>
-</div>
-
-<div id="batteryPercent">--%</div>
-
-</div>
-
-<div class="stat" id="signal">📶 --</div>
-
-</div>
-
-<div id="panelContent">
-
-<h3>Battery</h3>
-
-<canvas id="batteryChart"></canvas>
-
-<div class="sliderBox">
-
-<h3>Punktide arv</h3>
-
-<input type="range"
-id="pointSlider"
-min="1"
-max="500"
-value="100">
-
-<div id="pointCount">100</div>
-
-</div>
-
-<div class="sliderBox">
-
-<h3>Aeg</h3>
-
-<input type="range"
-id="timeSlider">
-
-</div>
-
-</div>
-
+    <div class="sliderBox">
+      <h3>Ajas tagasi kerimine</h3>
+      <div id="timeIndicator">Hetkeaeg: --:--</div>
+      <input type="range" id="timeSlider">
+    </div>
+  </div>
 </div>
 
 <script>
+/* SEADED */
+const FETCH_LIMIT = 500; // Mitu punkti serverist korraga alla laetakse
+const API_URL = "https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=" + FETCH_LIMIT;
 
-/* API */
+/* GLOBAALSED MUUTUJAD */
+let rawPoints = [];
+let trailLength = parseInt(document.getElementById("pointSlider").value);
+let currentIndex = 0;
+let marker = null;
+let routeLine = null;
+let batteryChartInstance = null;
 
-let pointLimit=100;
-
-const API_BASE=
-"https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=";
-
-
-/* MAP */
-
-let map=L.map('map');
-
-let estoniaBounds=[
-[57.5,21.5],
-[59.8,28.2]
-];
-
+/* MAP INIT */
+let map = L.map('map');
+let estoniaBounds = [[57.5, 21.5], [59.8, 28.2]];
 map.fitBounds(estoniaBounds);
 
-L.tileLayer(
-'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-{maxZoom:19}
-).addTo(map);
-
-
-/* PANEL */
-
-document.getElementById("mini").onclick=()=>{
-document.getElementById("panel").classList.toggle("open");
-};
-
-
-/* CLOCK */
-
-setInterval(()=>{
-
-let t=new Date();
-
-document.getElementById("clock").innerHTML=
-t.toLocaleTimeString('et-EE',{hour12:false});
-
-},1000);
-
-
-/* SLIDERS */
-
-let pointSlider=document.getElementById("pointSlider");
-
-pointSlider.oninput=function(){
-
-pointLimit=this.value;
-
-document.getElementById("pointCount").innerHTML=pointLimit;
-
-};
-
-pointSlider.onchange=function(){
-
-loadData();
-
-};
-
-let timeSlider=document.getElementById("timeSlider");
-
-timeSlider.oninput=function(){
-
-drawSelected();
-
-};
-
-
-/* GLOBAL */
-
-let rawPoints=[];
-let marker;
-let routeLine;
-
-
-/* LOAD DATA */
-
-loadData();
-
-async function loadData(){
-
-let API=API_BASE+pointLimit;
-
-let res=await fetch(API);
-
-rawPoints=await res.json();
-
-if(rawPoints.length<2)return;
-
-timeSlider.min=0;
-timeSlider.max=rawPoints.length-1;
-timeSlider.value=rawPoints.length-1;
-
-drawSelected();
-
-drawBattery();
-
-}
-
-
-/* SELECTED TIME */
-
-async function drawSelected(){
-
-let index=parseInt(timeSlider.value);
-
-let start=Math.max(0,index-pointLimit+1);
-
-let points=rawPoints.slice(start,index+1);
-
-await drawRoute(points);
-
-updateMini(points[points.length-1]);
-
-}
-
-
-/* ROUTE */
-
-async function drawRoute(points){
-
-if(routeLine){
-map.removeLayer(routeLine);
-}
-
-let snapped=[];
-
-try{
-
-let coords=points
-.map(p=>p.lon+","+p.lat)
-.join(";");
-
-let url=
-"https://router.project-osrm.org/match/v1/driving/"
-+coords+
-"?overview=full&geometries=geojson";
-
-let res=await fetch(url);
-
-let data=await res.json();
-
-if(data.code==="Ok"){
-
-snapped=data.matchings[0].geometry.coordinates;
-
-}else{
-
-throw "routing fail";
-
-}
-
-}catch(e){
-
-snapped=points.map(p=>[p.lon,p.lat]);
-
-}
-
-let latlngs=snapped.map(c=>[c[1],c[0]]);
-
-routeLine=L.polyline(latlngs,{
-color:"red",
-weight:4
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '© OpenStreetMap'
 }).addTo(map);
 
-let last=points[points.length-1];
+/* PANEL TOGGLE */
+document.getElementById("mini").onclick = () => {
+  document.getElementById("panel").classList.toggle("open");
+};
 
-if(marker){
-marker.setLatLng([last.lat,last.lon]);
-}else{
-marker=L.marker([last.lat,last.lon]).addTo(map);
+/* PÄRISAJA KELL (Üleval vasakul nurgas paneelil) */
+setInterval(() => {
+  let t = new Date();
+  document.getElementById("clock").innerHTML = t.toLocaleTimeString('et-EE', {hour12: false});
+}, 1000);
+
+/* SLIDERITE LOOGIKA */
+let pointSlider = document.getElementById("pointSlider");
+let timeSlider = document.getElementById("timeSlider");
+
+// Punktide arv (saba pikkus)
+pointSlider.oninput = function() {
+  trailLength = parseInt(this.value);
+  document.getElementById("pointCount").innerHTML = trailLength;
+  drawSelected(false); // False = joonistame kähku ilma OSRMita
+};
+pointSlider.onchange = function() {
+  drawSelected(true); // True = hiir lasti lahti, teeme ilusa OSRM joone
+};
+
+// Aja kerimine
+timeSlider.oninput = function() {
+  currentIndex = parseInt(this.value);
+  drawSelected(false); // Reaalajas lohistamine ilma OSRMita
+};
+timeSlider.onchange = function() {
+  currentIndex = parseInt(this.value);
+  drawSelected(true); // Lohistamine lõpetati, snapime tee külge
+};
+
+/* LAE ANDMED SERVERIST */
+loadData();
+
+async function loadData() {
+  try {
+    let res = await fetch(API_URL);
+    rawPoints = await res.json();
+    
+    if(rawPoints.length < 1) return;
+
+    // Seadistame aja slideri piirid
+    timeSlider.min = 0;
+    timeSlider.max = rawPoints.length - 1;
+    timeSlider.value = rawPoints.length - 1; // Paneme kõige uuema punkti peale
+    currentIndex = rawPoints.length - 1;
+
+    drawSelected(true);
+    drawBatteryChart();
+  } catch (error) {
+    console.error("Viga andmete laadimisel:", error);
+  }
 }
 
-map.setView([last.lat,last.lon],15);
+/* JOONISTA VALITUD HETK KAARDILE */
+async function drawSelected(useOSRM = true) {
+  if (rawPoints.length === 0) return;
 
+  let index = currentIndex;
+  let currentDataPoint = rawPoints[index];
+
+  // 1. Värskenda aja indikaatorit
+  let timeObj = new Date(currentDataPoint.time || currentDataPoint.timestamp);
+  document.getElementById("timeIndicator").innerHTML = timeObj.toLocaleString('et-EE');
+
+  // 2. Värskenda väikest paneeli (aku ja levi vastavalt keritud ajale!)
+  updateMini(currentDataPoint);
+
+  // 3. Võta õige pikkusega "saba" andmebaasist
+  let startIdx = Math.max(0, index - trailLength + 1);
+  let pointsToDraw = rawPoints.slice(startIdx, index + 1);
+
+  // 4. Joonista kaart
+  await drawRoute(pointsToDraw, useOSRM);
 }
 
+/* MARSRUUDI JA MARKERI JOONISTAMINE */
+async function drawRoute(points, useOSRM) {
+  if (routeLine) {
+    map.removeLayer(routeLine);
+    routeLine = null;
+  }
+  
+  if (points.length === 0) return;
 
-/* MINI PANEL */
+  let latlngs = [];
 
-function updateMini(last){
+  // OSRM Map Matching (ainult siis kui punkte on < 100, muidu OSRM annab vea)
+  if (useOSRM && points.length > 1 && points.length <= 100) {
+    try {
+      let coords = points.map(p => p.lon + "," + p.lat).join(";");
+      let url = "https://router.project-osrm.org/match/v1/driving/" + coords + "?overview=full&geometries=geojson";
+      
+      let res = await fetch(url);
+      let data = await res.json();
+      
+      if (data.code === "Ok") {
+        let snapped = data.matchings[0].geometry.coordinates;
+        latlngs = snapped.map(c => [c[1], c[0]]); // GeoJSON on [lon, lat], Leaflet tahab [lat, lon]
+      } else {
+        latlngs = points.map(p => [p.lat, p.lon]);
+      }
+    } catch(e) {
+      console.warn("OSRM ebaõnnestus, joonistan otse.");
+      latlngs = points.map(p => [p.lat, p.lon]);
+    }
+  } else {
+    // Kui OSRM on välja lülitatud (lohistamise ajal) või punkte liiga palju
+    latlngs = points.map(p => [p.lat, p.lon]);
+  }
 
-let v=last.battery;
+  // Joonista joon
+  if (latlngs.length > 1) {
+    routeLine = L.polyline(latlngs, {
+      color: "#F44336",
+      weight: 4,
+      opacity: 0.8
+    }).addTo(map);
+  }
 
-let percent=((v-3.3)/(4.2-3.3))*100;
+  // Marker ja Popup
+  let last = points[points.length - 1];
+  let timeStr = new Date(last.time || last.timestamp).toLocaleTimeString('et-EE');
+  let popupText = `<b>Aeg:</b> ${timeStr}<br><b>Kiirus:</b> ${last.speed || 0} km/h`;
 
-percent=Math.max(0,Math.min(100,percent));
+  if (marker) {
+    marker.setLatLng([last.lat, last.lon]);
+    if(marker.getPopup()) {
+      marker.setPopupContent(popupText);
+    } else {
+      marker.bindPopup(popupText);
+    }
+  } else {
+    marker = L.marker([last.lat, last.lon]).addTo(map).bindPopup(popupText);
+  }
 
-document.getElementById("batteryBar").style.width=
-percent+"%";
-
-document.getElementById("batteryPercent").innerHTML=
-percent.toFixed(0)+"%";
-
-document.getElementById("signal").innerHTML=
-"📶 "+last.signal;
-
+  // Paneme kaardi tsentrisse valitud punktile (võid eemaldada, kui häirib kerimisel)
+  map.setView([last.lat, last.lon]);
 }
 
+/* VÄRSKENDA PANEELI INFOT */
+function updateMini(dataPoint) {
+  // Toetab nii Volte (3.8) kui ka millivolte (3800)
+  let v = dataPoint.battery || dataPoint.vbat || 0;
+  let volt = v > 100 ? v / 1000 : v; 
+  
+  // Arvutame protsendi (3.3V on tühi, 4.2V on täis)
+  let percent = ((volt - 3.3) / (4.2 - 3.3)) * 100;
+  percent = Math.max(0, Math.min(100, percent)); // Hoiame 0 ja 100 vahel
 
-/* BATTERY GRAPH */
+  let bar = document.getElementById("batteryBar");
+  bar.style.width = percent + "%";
+  
+  // Värvi muutmine vastavalt akule
+  if(percent > 50) bar.style.backgroundColor = "#4caf50"; // Roheline
+  else if(percent > 20) bar.style.backgroundColor = "#ff9800"; // Oranž
+  else bar.style.backgroundColor = "#f44336"; // Punane
 
-function drawBattery(){
-
-let ctx=document.getElementById("batteryChart");
-
-let labels=[];
-let data=[];
-
-rawPoints.forEach(p=>{
-
-labels.push(new Date(p.time).toLocaleTimeString());
-data.push(p.battery);
-
-});
-
-new Chart(ctx,{
-
-type:"line",
-
-data:{
-labels:labels,
-datasets:[{
-label:"Battery",
-data:data
-}]
+  document.getElementById("batteryPercent").innerHTML = percent.toFixed(0) + "%";
+  document.getElementById("signal").innerHTML = "📶 " + (dataPoint.signal || "--");
 }
 
-});
+/* AKU GRAAFIK */
+function drawBatteryChart() {
+  let ctx = document.getElementById("batteryChart");
 
+  // Kui graafik on juba olemas, peame vana hävitama, et uut joonistada
+  if (batteryChartInstance) {
+    batteryChartInstance.destroy();
+  }
+
+  let labels = [];
+  let data = [];
+
+  rawPoints.forEach(p => {
+    let tObj = new Date(p.time || p.timestamp);
+    labels.push(tObj.toLocaleTimeString('et-EE', {hour: '2-digit', minute:'2-digit'}));
+    
+    let v = p.battery || p.vbat || 0;
+    let volt = v > 100 ? v / 1000 : v;
+    data.push(volt.toFixed(2));
+  });
+
+  batteryChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Pinge (V)",
+        data: data,
+        borderColor: "#4caf50",
+        backgroundColor: "rgba(76, 175, 80, 0.2)",
+        pointRadius: 1,
+        borderWidth: 2,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: "#ccc", maxTicksLimit: 10 } },
+        y: { ticks: { color: "#ccc" }, min: 3.2, max: 4.3 }
+      },
+      plugins: {
+        legend: { display: false }
+      }
+    }
+  });
 }
-
 </script>
 
 </body>
