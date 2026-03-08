@@ -26,7 +26,7 @@
     top: 0;
     right: 0;
     height: 100%;
-    width: 75px; /* Veidi laiem, et aku protsent ära mahuks */
+    width: 75px; 
     background: rgba(30, 30, 30, 0.85);
     color: white;
     transition: width 0.3s ease;
@@ -88,10 +88,32 @@
   /* GRAPH & SLIDERS */
   #batteryChart {
     width: 100%;
-    height: 200px;
+    height: 180px;
+  }
+  
+  .graphBox {
     background: rgba(0,0,0,0.2);
+    padding: 10px;
     border-radius: 8px;
-    padding: 5px;
+  }
+
+  .graphHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+  }
+  
+  .graphHeader h3 {
+    margin: 0;
+    font-size: 14px;
+    color: #ccc;
+  }
+
+  #batteryStats {
+    font-size: 12px;
+    color: #4caf50;
+    font-weight: bold;
   }
 
   .sliderBox {
@@ -144,8 +166,14 @@
   </div>
 
   <div id="panelContent">
-    <h3>Aku pinge ajalugu</h3>
-    <canvas id="batteryChart"></canvas>
+    
+    <div class="graphBox">
+      <div class="graphHeader">
+        <h3>Pinge (viimased 24h)</h3>
+        <div id="batteryStats">Min: -- V | Max: -- V</div>
+      </div>
+      <canvas id="batteryChart"></canvas>
+    </div>
 
     <div class="sliderBox">
       <h3>Saba pikkus (punkte)</h3>
@@ -163,7 +191,7 @@
 
 <script>
 /* SEADED */
-const FETCH_LIMIT = 500; // Mitu punkti serverist korraga alla laetakse
+const FETCH_LIMIT = 500; 
 const API_URL = "https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=" + FETCH_LIMIT;
 
 /* GLOBAALSED MUUTUJAD */
@@ -189,7 +217,7 @@ document.getElementById("mini").onclick = () => {
   document.getElementById("panel").classList.toggle("open");
 };
 
-/* PÄRISAJA KELL (Üleval vasakul nurgas paneelil) */
+/* PÄRISAJA KELL */
 setInterval(() => {
   let t = new Date();
   document.getElementById("clock").innerHTML = t.toLocaleTimeString('et-EE', {hour12: false});
@@ -199,24 +227,22 @@ setInterval(() => {
 let pointSlider = document.getElementById("pointSlider");
 let timeSlider = document.getElementById("timeSlider");
 
-// Punktide arv (saba pikkus)
 pointSlider.oninput = function() {
   trailLength = parseInt(this.value);
   document.getElementById("pointCount").innerHTML = trailLength;
-  drawSelected(false); // False = joonistame kähku ilma OSRMita
+  drawSelected(false); 
 };
 pointSlider.onchange = function() {
-  drawSelected(true); // True = hiir lasti lahti, teeme ilusa OSRM joone
+  drawSelected(true); 
 };
 
-// Aja kerimine
 timeSlider.oninput = function() {
   currentIndex = parseInt(this.value);
-  drawSelected(false); // Reaalajas lohistamine ilma OSRMita
+  drawSelected(false); 
 };
 timeSlider.onchange = function() {
   currentIndex = parseInt(this.value);
-  drawSelected(true); // Lohistamine lõpetati, snapime tee külge
+  drawSelected(true); 
 };
 
 /* LAE ANDMED SERVERIST */
@@ -229,14 +255,13 @@ async function loadData() {
     
     if(rawPoints.length < 1) return;
 
-    // Seadistame aja slideri piirid
     timeSlider.min = 0;
     timeSlider.max = rawPoints.length - 1;
-    timeSlider.value = rawPoints.length - 1; // Paneme kõige uuema punkti peale
+    timeSlider.value = rawPoints.length - 1; 
     currentIndex = rawPoints.length - 1;
 
     drawSelected(true);
-    drawBatteryChart();
+    drawBatteryChart(); // Joonistame 24h graafiku
   } catch (error) {
     console.error("Viga andmete laadimisel:", error);
   }
@@ -249,18 +274,14 @@ async function drawSelected(useOSRM = true) {
   let index = currentIndex;
   let currentDataPoint = rawPoints[index];
 
-  // 1. Värskenda aja indikaatorit
   let timeObj = new Date(currentDataPoint.time || currentDataPoint.timestamp);
   document.getElementById("timeIndicator").innerHTML = timeObj.toLocaleString('et-EE');
 
-  // 2. Värskenda väikest paneeli (aku ja levi vastavalt keritud ajale!)
   updateMini(currentDataPoint);
 
-  // 3. Võta õige pikkusega "saba" andmebaasist
   let startIdx = Math.max(0, index - trailLength + 1);
   let pointsToDraw = rawPoints.slice(startIdx, index + 1);
 
-  // 4. Joonista kaart
   await drawRoute(pointsToDraw, useOSRM);
 }
 
@@ -275,7 +296,6 @@ async function drawRoute(points, useOSRM) {
 
   let latlngs = [];
 
-  // OSRM Map Matching (ainult siis kui punkte on < 100, muidu OSRM annab vea)
   if (useOSRM && points.length > 1 && points.length <= 100) {
     try {
       let coords = points.map(p => p.lon + "," + p.lat).join(";");
@@ -286,20 +306,17 @@ async function drawRoute(points, useOSRM) {
       
       if (data.code === "Ok") {
         let snapped = data.matchings[0].geometry.coordinates;
-        latlngs = snapped.map(c => [c[1], c[0]]); // GeoJSON on [lon, lat], Leaflet tahab [lat, lon]
+        latlngs = snapped.map(c => [c[1], c[0]]); 
       } else {
         latlngs = points.map(p => [p.lat, p.lon]);
       }
     } catch(e) {
-      console.warn("OSRM ebaõnnestus, joonistan otse.");
       latlngs = points.map(p => [p.lat, p.lon]);
     }
   } else {
-    // Kui OSRM on välja lülitatud (lohistamise ajal) või punkte liiga palju
     latlngs = points.map(p => [p.lat, p.lon]);
   }
 
-  // Joonista joon
   if (latlngs.length > 1) {
     routeLine = L.polyline(latlngs, {
       color: "#F44336",
@@ -308,7 +325,6 @@ async function drawRoute(points, useOSRM) {
     }).addTo(map);
   }
 
-  // Marker ja Popup
   let last = points[points.length - 1];
   let timeStr = new Date(last.time || last.timestamp).toLocaleTimeString('et-EE');
   let popupText = `<b>Aeg:</b> ${timeStr}<br><b>Kiirus:</b> ${last.speed || 0} km/h`;
@@ -324,52 +340,80 @@ async function drawRoute(points, useOSRM) {
     marker = L.marker([last.lat, last.lon]).addTo(map).bindPopup(popupText);
   }
 
-  // Paneme kaardi tsentrisse valitud punktile (võid eemaldada, kui häirib kerimisel)
   map.setView([last.lat, last.lon]);
 }
 
 /* VÄRSKENDA PANEELI INFOT */
 function updateMini(dataPoint) {
-  // Toetab nii Volte (3.8) kui ka millivolte (3800)
   let v = dataPoint.battery || dataPoint.vbat || 0;
   let volt = v > 100 ? v / 1000 : v; 
   
-  // Arvutame protsendi (3.3V on tühi, 4.2V on täis)
   let percent = ((volt - 3.3) / (4.2 - 3.3)) * 100;
-  percent = Math.max(0, Math.min(100, percent)); // Hoiame 0 ja 100 vahel
+  percent = Math.max(0, Math.min(100, percent)); 
 
   let bar = document.getElementById("batteryBar");
   bar.style.width = percent + "%";
   
-  // Värvi muutmine vastavalt akule
-  if(percent > 50) bar.style.backgroundColor = "#4caf50"; // Roheline
-  else if(percent > 20) bar.style.backgroundColor = "#ff9800"; // Oranž
-  else bar.style.backgroundColor = "#f44336"; // Punane
+  if(percent > 50) bar.style.backgroundColor = "#4caf50"; 
+  else if(percent > 20) bar.style.backgroundColor = "#ff9800"; 
+  else bar.style.backgroundColor = "#f44336"; 
 
   document.getElementById("batteryPercent").innerHTML = percent.toFixed(0) + "%";
   document.getElementById("signal").innerHTML = "📶 " + (dataPoint.signal || "--");
 }
 
-/* AKU GRAAFIK */
+/* AKU GRAAFIK (Ainult 24h, peenike joon, min/max filter) */
 function drawBatteryChart() {
   let ctx = document.getElementById("batteryChart");
 
-  // Kui graafik on juba olemas, peame vana hävitama, et uut joonistada
   if (batteryChartInstance) {
     batteryChartInstance.destroy();
   }
 
   let labels = [];
   let data = [];
+  let minVolt = 9.9; // Algne kõrge väärtus, et saaks allapoole tulla
+  let maxVolt = 0.0;
+
+  // Arvutame 24 tunni taguse aja
+  let now = new Date();
+  let limit24h = now.getTime() - (24 * 60 * 60 * 1000);
 
   rawPoints.forEach(p => {
     let tObj = new Date(p.time || p.timestamp);
-    labels.push(tObj.toLocaleTimeString('et-EE', {hour: '2-digit', minute:'2-digit'}));
     
-    let v = p.battery || p.vbat || 0;
-    let volt = v > 100 ? v / 1000 : v;
-    data.push(volt.toFixed(2));
+    // Võtame ainult punktid, mis on uuemad kui 24 tundi
+    if (tObj.getTime() >= limit24h) {
+      let v = p.battery || p.vbat;
+      
+      if (v) {
+        let volt = parseFloat(v > 100 ? v / 1000 : v);
+        
+        // Sanity check: salvestame graafikule ainult reaalseid pingeid (2V - 5V)
+        // See väldib null-väärtuste (0) poolt graafiku alla kiskumist
+        if (volt >= 2.0 && volt <= 5.0) {
+          labels.push(tObj.toLocaleTimeString('et-EE', {hour: '2-digit', minute:'2-digit'}));
+          data.push(volt);
+          
+          if (volt < minVolt) minVolt = volt;
+          if (volt > maxVolt) maxVolt = volt;
+        }
+      }
+    }
   });
+
+  // Kui 24h jooksul kehtivaid andmeid polnud, katkestame
+  if (data.length === 0) {
+    document.getElementById("batteryStats").innerHTML = "Andmed puuduvad";
+    return;
+  }
+
+  // Uuendame Min/Max HTML teksti
+  document.getElementById("batteryStats").innerHTML = `Min: ${minVolt.toFixed(2)}V | Max: ${maxVolt.toFixed(2)}V`;
+
+  // Anname Y-teljele natuke hingamisruumi (et joon ei puutuks graafiku lage/põhja)
+  let yMin = Math.max(3.0, Math.floor(minVolt * 10) / 10 - 0.1);
+  let yMax = Math.min(4.5, Math.ceil(maxVolt * 10) / 10 + 0.1);
 
   batteryChartInstance = new Chart(ctx, {
     type: "line",
@@ -379,21 +423,33 @@ function drawBatteryChart() {
         label: "Pinge (V)",
         data: data,
         borderColor: "#4caf50",
-        backgroundColor: "rgba(76, 175, 80, 0.2)",
-        pointRadius: 1,
-        borderWidth: 2,
-        fill: true
+        backgroundColor: "transparent", // Täitevärv puudub
+        pointRadius: 0, // Mummud puuduvad
+        borderWidth: 1, // Peenike joon
+        tension: 0.1 // Õrn kurv (pehmendab nurki)
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       scales: {
-        x: { ticks: { color: "#ccc", maxTicksLimit: 10 } },
-        y: { ticks: { color: "#ccc" }, min: 3.2, max: 4.3 }
+        x: { 
+          ticks: { color: "#888", maxTicksLimit: 6 }, // Näitame max 6 kellaaega, et mitte üle koormata
+          grid: { display: false } // Eemaldame vertikaalsed taustajooned puhtuse huvides
+        },
+        y: { 
+          ticks: { color: "#888" },
+          grid: { color: "rgba(255,255,255,0.05)" },
+          min: yMin, 
+          max: yMax 
+        }
       },
       plugins: {
-        legend: { display: false }
+        legend: { display: false },
+        tooltip: {
+          mode: 'index',
+          intersect: false
+        }
       }
     }
   });
