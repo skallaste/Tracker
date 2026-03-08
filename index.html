@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html>
-
 <head>
 
 <meta charset="utf-8">
 <title>GPS Tracker</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBaUv2fqgvvzBKBwqCmZgoKIDM92ASVYWo"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 
@@ -16,19 +16,16 @@ font-family:Arial;
 }
 
 #map{
-height:100vh;
-width:100%;
+height:70vh;
 }
 
-#panel{
-position:absolute;
-top:10px;
-left:50px;
-background:white;
+#controls{
 padding:10px;
-border-radius:8px;
-box-shadow:0 0 10px rgba(0,0,0,0.2);
-z-index:1000;
+background:#f0f0f0;
+}
+
+#timeline{
+width:100%;
 }
 
 </style>
@@ -37,172 +34,265 @@ z-index:1000;
 
 <body>
 
-<div id="panel">
+<div id="map"></div>
 
-<b>GPS Tracker</b><br>
+<div id="controls">
 
-Points: <input id="points" value="80" size="4">
+<input type="range" id="timeline" min="0" max="0" value="0">
 
-<button onclick="loadData()">Refresh</button>
+<div id="speed"></div>
+
+<canvas id="batteryChart"></canvas>
 
 </div>
 
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
 
-// GOOGLE SCRIPT API
-const apiBase =
-"https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec";
+const API="https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=500";
 
-const map = L.map('map').setView([59.437,24.753],13);
+let map;
+let marker;
+let routeLine;
 
-L.tileLayer(
-'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-{
-maxZoom:19
-}).addTo(map);
+let rawPoints=[];
+let snappedPath=[];
 
-let marker = null;
-let trackLine = null;
-let firstLoad = true;
+function init(){
 
-
-// SNAP GPS PUNKTID TEEDELE
-async function snapToRoad(coords){
-
-try{
-
-// OSRM lubab max ~100 punkti
-if(coords.length > 100){
-coords = coords.slice(coords.length-100);
-}
-
-let coordString = coords
-.map(c => c[1] + "," + c[0])
-.join(";");
-
-let url =
-"https://router.project-osrm.org/match/v1/driving/"
-+ coordString
-+ "?overview=full&geometries=geojson";
-
-const res = await fetch(url);
-const json = await res.json();
-
-if(json.code !== "Ok"){
-
-console.log("OSRM fallback");
-return coords;
-
-}
-
-const snapped = json.matchings[0].geometry.coordinates;
-
-return snapped.map(c => [c[1],c[0]]);
-
-}catch(e){
-
-console.log("match error",e);
-return coords;
-
-}
-
-}
-
-
-// ANDMETE LAADIMINE
-async function loadData(){
-
-let points = parseInt(document.getElementById("points").value);
-
-// OSRM piirang
-if(points > 100){
-points = 100;
-document.getElementById("points").value = 100;
-}
-
-const url = apiBase + "?api=points&points=" + points;
-
-try{
-
-const response = await fetch(url);
-const data = await response.json();
-
-if(!data || data.length === 0) return;
-
-const coords = [];
-
-data.forEach(p=>{
-coords.push([p.lat,p.lon]);
+map=new google.maps.Map(document.getElementById("map"),{
+zoom:14,
+center:{lat:59,lng:25}
 });
 
-// SNAP TEEDELE
-const snappedCoords = await snapToRoad(coords);
+marker=new google.maps.Marker({map:map});
 
-const last = snappedCoords[snappedCoords.length-1];
-
-
-// MARKER
-if(!marker){
-
-marker = L.marker(last).addTo(map);
-
-}else{
-
-marker.setLatLng(last);
-
-}
-
-let lastPoint = data[data.length-1];
-
-marker.bindPopup(
-"<b>GPS Tracker</b>" +
-"<br>Time: " + lastPoint.time +
-"<br>Battery: " + lastPoint.battery +
-"<br>Signal: " + lastPoint.signal +
-"<br>Status: " + lastPoint.status
-);
-
-
-// TRAJEKTOOR
-if(trackLine){
-map.removeLayer(trackLine);
-}
-
-trackLine = L.polyline(snappedCoords,{
-color:"red",
-weight:4
-}).addTo(map);
-
-
-// ZOOM ainult esimesel laadimisel
-if(firstLoad){
-
-map.setView(last,15);
-firstLoad = false;
-
-}
-
-}catch(e){
-
-console.log("API error",e);
-
-}
-
-}
-
-
-// ESIMENE LAADIMINE
 loadData();
 
-// AUTO REFRESH
-setInterval(loadData,5000);
+}
+
+async function loadData(){
+
+let cached=localStorage.getItem("gpscache");
+
+if(cached){
+rawPoints=JSON.parse(cached);
+process();
+}
+
+let res=await fetch(API);
+
+rawPoints=await res.json();
+
+localStorage.setItem("gpscache",JSON.stringify(rawPoints));
+
+process();
+
+}
+
+async function process(){
+
+if(rawPoints.length<2)return;
+
+await snapRoute();
+
+drawRoute();
+
+setupTimeline();
+
+calcSpeed();
+
+drawBattery();
+
+}
+
+async function snapRoute(){
+
+let service=new google.maps.DirectionsService();
+
+let waypoints=[];
+
+let step=Math.ceil(rawPoints.length/20);
+
+for(let i=step;i<rawPoints.length-step;i+=step){
+
+waypoints.push({
+location:new google.maps.LatLng(rawPoints[i].lat,rawPoints[i].lon),
+stopover:false
+});
+
+}
+
+let result=await service.route({
+
+origin:new google.maps.LatLng(rawPoints[0].lat,rawPoints[0].lon),
+
+destination:new google.maps.LatLng(rawPoints[rawPoints.length-1].lat,rawPoints[rawPoints.length-1].lon),
+
+waypoints:waypoints,
+
+travelMode:"DRIVING"
+
+});
+
+snappedPath=result.routes[0].overview_path;
+
+}
+
+function drawRoute(){
+
+routeLine=new google.maps.Polyline({
+
+path:snappedPath,
+
+map:map,
+
+strokeColor:"#ff0000",
+
+strokeWeight:4
+
+});
+
+let bounds=new google.maps.LatLngBounds();
+
+snappedPath.forEach(p=>bounds.extend(p));
+
+map.fitBounds(bounds);
+
+}
+
+function setupTimeline(){
+
+let slider=document.getElementById("timeline");
+
+slider.max=snappedPath.length-1;
+
+slider.oninput=function(){
+
+let pos=snappedPath[this.value];
+
+marker.setPosition(pos);
+
+};
+
+animate();
+
+}
+
+function animate(){
+
+let i=0;
+
+setInterval(()=>{
+
+if(i>=snappedPath.length)return;
+
+marker.setPosition(snappedPath[i]);
+
+document.getElementById("timeline").value=i;
+
+i++;
+
+},200);
+
+}
+
+function calcSpeed(){
+
+let speeds=[];
+
+for(let i=1;i<rawPoints.length;i++){
+
+let d=dist(
+
+rawPoints[i-1].lat,
+
+rawPoints[i-1].lon,
+
+rawPoints[i].lat,
+
+rawPoints[i].lon
+
+);
+
+let t=(new Date(rawPoints[i].time)-new Date(rawPoints[i-1].time))/1000;
+
+let s=(d/t)*3.6;
+
+speeds.push(s);
+
+}
+
+let avg=speeds.reduce((a,b)=>a+b,0)/speeds.length;
+
+document.getElementById("speed").innerHTML="Average speed: "+avg.toFixed(1)+" km/h";
+
+}
+
+function dist(lat1,lon1,lat2,lon2){
+
+let R=6371e3;
+
+let φ1=lat1*Math.PI/180;
+
+let φ2=lat2*Math.PI/180;
+
+let Δφ=(lat2-lat1)*Math.PI/180;
+
+let Δλ=(lon2-lon1)*Math.PI/180;
+
+let a=Math.sin(Δφ/2)*Math.sin(Δφ/2)+
+
+Math.cos(φ1)*Math.cos(φ2)*
+
+Math.sin(Δλ/2)*Math.sin(Δλ/2);
+
+let c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+
+return R*c;
+
+}
+
+function drawBattery(){
+
+let ctx=document.getElementById("batteryChart");
+
+let labels=[];
+
+let data=[];
+
+rawPoints.forEach(p=>{
+
+labels.push(p.time);
+
+data.push(p.battery);
+
+});
+
+new Chart(ctx,{
+
+type:"line",
+
+data:{
+
+labels:labels,
+
+datasets:[{
+
+label:"Battery",
+
+data:data
+
+}]
+
+}
+
+});
+
+}
+
+window.onload=init;
 
 </script>
 
 </body>
-
 </html>
