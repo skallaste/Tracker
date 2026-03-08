@@ -23,17 +23,30 @@ height:100%;
 width:100%;
 }
 
+/* PANEL */
+
 #panel{
+
 position:absolute;
 top:0;
 right:0;
+
 height:100%;
-width:60px;
-background:#222;
+
+width:65px;
+
+background:rgba(30,30,30,0.75);
+
 color:white;
+
 transition:0.3s;
+
 z-index:1000;
+
 overflow:hidden;
+
+backdrop-filter:blur(3px);
+
 }
 
 #panel.open{
@@ -41,14 +54,19 @@ width:320px;
 }
 
 #mini{
+
 padding:10px;
 text-align:center;
 cursor:pointer;
+
 }
 
 .stat{
 margin:10px 0;
+font-size:14px;
 }
+
+/* BATTERY BAR */
 
 .progress{
 
@@ -68,14 +86,20 @@ width:0%;
 
 }
 
+/* PANEL CONTENT */
+
 #panelContent{
+
 padding:15px;
 display:none;
+
 }
 
 #panel.open #panelContent{
 display:block;
 }
+
+/* GRAPH */
 
 #batteryChart{
 width:100%;
@@ -84,6 +108,10 @@ height:200px;
 
 .sliderBox{
 margin-top:20px;
+}
+
+#timeSlider{
+width:100%;
 }
 
 </style>
@@ -127,10 +155,18 @@ margin-top:20px;
 id="pointSlider"
 min="1"
 max="500"
-value="100"
-style="width:100%">
+value="100">
 
 <div id="pointCount">100</div>
+
+</div>
+
+<div class="sliderBox">
+
+<h3>Aeg</h3>
+
+<input type="range"
+id="timeSlider">
 
 </div>
 
@@ -179,31 +215,41 @@ setInterval(()=>{
 let t=new Date();
 
 document.getElementById("clock").innerHTML=
-t.toLocaleTimeString();
+t.toLocaleTimeString('et-EE',{hour12:false});
 
 },1000);
 
 
-/* SLIDER */
+/* SLIDERS */
 
-let slider=document.getElementById("pointSlider");
+let pointSlider=document.getElementById("pointSlider");
 
-slider.oninput=function(){
+pointSlider.oninput=function(){
 
 pointLimit=this.value;
+
 document.getElementById("pointCount").innerHTML=pointLimit;
 
 };
 
-slider.onchange=function(){
+pointSlider.onchange=function(){
+
 loadData();
+
+};
+
+let timeSlider=document.getElementById("timeSlider");
+
+timeSlider.oninput=function(){
+
+drawSelected();
+
 };
 
 
 /* GLOBAL */
 
 let rawPoints=[];
-let snapped=[];
 let marker;
 let routeLine;
 
@@ -222,26 +268,47 @@ rawPoints=await res.json();
 
 if(rawPoints.length<2)return;
 
-await snapRoute();
+timeSlider.min=0;
+timeSlider.max=rawPoints.length-1;
+timeSlider.value=rawPoints.length-1;
 
-drawRoute();
-
-updateMini();
+drawSelected();
 
 drawBattery();
-
-animateMarker();
 
 }
 
 
-/* SNAP ROUTE */
+/* SELECTED TIME */
 
-async function snapRoute(){
+async function drawSelected(){
+
+let index=parseInt(timeSlider.value);
+
+let start=Math.max(0,index-pointLimit+1);
+
+let points=rawPoints.slice(start,index+1);
+
+await drawRoute(points);
+
+updateMini(points[points.length-1]);
+
+}
+
+
+/* ROUTE */
+
+async function drawRoute(points){
+
+if(routeLine){
+map.removeLayer(routeLine);
+}
+
+let snapped=[];
 
 try{
 
-let coords=rawPoints
+let coords=points
 .map(p=>p.lon+","+p.lat)
 .join(";");
 
@@ -260,34 +327,14 @@ snapped=data.matchings[0].geometry.coordinates;
 
 }else{
 
-fallbackRoute();
+throw "routing fail";
 
 }
 
 }catch(e){
 
-fallbackRoute();
+snapped=points.map(p=>[p.lon,p.lat]);
 
-}
-
-}
-
-
-/* FALLBACK */
-
-function fallbackRoute(){
-
-snapped=rawPoints.map(p=>[p.lon,p.lat]);
-
-}
-
-
-/* DRAW ROUTE */
-
-function drawRoute(){
-
-if(routeLine){
-map.removeLayer(routeLine);
 }
 
 let latlngs=snapped.map(c=>[c[1],c[0]]);
@@ -297,41 +344,22 @@ color:"red",
 weight:4
 }).addTo(map);
 
-marker=L.marker(latlngs[0]).addTo(map);
+let last=points[points.length-1];
 
-let last=rawPoints[rawPoints.length-1];
+if(marker){
+marker.setLatLng([last.lat,last.lon]);
+}else{
+marker=L.marker([last.lat,last.lon]).addTo(map);
+}
 
 map.setView([last.lat,last.lon],15);
 
 }
 
 
-/* MARKER ANIMATION */
-
-function animateMarker(){
-
-let latlngs=snapped.map(c=>[c[1],c[0]]);
-
-let i=0;
-
-setInterval(()=>{
-
-if(i>=latlngs.length)return;
-
-marker.setLatLng(latlngs[i]);
-
-i++;
-
-},200);
-
-}
-
-
 /* MINI PANEL */
 
-function updateMini(){
-
-let last=rawPoints[rawPoints.length-1];
+function updateMini(last){
 
 let v=last.battery;
 
