@@ -1,82 +1,182 @@
 <!DOCTYPE html>
 <html>
 <head>
-
 <meta charset="utf-8">
+
 <title>GPS Tracker</title>
 
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBaUv2fqgvvzBKBwqCmZgoKIDM92ASVYWo"></script>
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 
-body{
+html,body{
 margin:0;
+height:100%;
 font-family:Arial;
 }
 
 #map{
-height:70vh;
-}
-
-#controls{
-padding:10px;
-background:#f0f0f0;
-}
-
-#timeline{
+height:100%;
 width:100%;
 }
 
-</style>
+#panel{
+position:absolute;
+top:0;
+right:0;
+height:100%;
+width:60px;
+background:#222;
+color:white;
+transition:0.3s;
+z-index:1000;
+overflow:hidden;
+}
 
+#panel.open{
+width:320px;
+}
+
+#mini{
+padding:10px;
+text-align:center;
+cursor:pointer;
+}
+
+.stat{
+margin:10px 0;
+font-size:14px;
+}
+
+#panelContent{
+padding:15px;
+display:none;
+}
+
+#panel.open #panelContent{
+display:block;
+}
+
+#batteryChart{
+width:100%;
+height:200px;
+}
+
+.sliderBox{
+margin-top:20px;
+}
+
+</style>
 </head>
 
 <body>
 
 <div id="map"></div>
 
-<div id="controls">
+<div id="panel">
 
-<input type="range" id="timeline" min="0" max="0" value="0">
+<div id="mini">
 
-<div id="speed"></div>
+<div class="stat" id="time">--:--</div>
+
+<div class="stat" id="battery">🔋 --</div>
+
+<div class="stat" id="signal">📶 --</div>
+
+</div>
+
+<div id="panelContent">
+
+<h3>Battery</h3>
 
 <canvas id="batteryChart"></canvas>
+
+<div class="sliderBox">
+
+<h3>Punktide arv</h3>
+
+<input type="range"
+id="pointSlider"
+min="1"
+max="500"
+value="100"
+style="width:100%">
+
+<div id="pointCount">100</div>
+
+</div>
+
+<div id="extraArea">
+<!-- tulevased nupud -->
+</div>
+
+</div>
 
 </div>
 
 <script>
 
-const API="https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=500";
+let pointLimit=100;
 
-let map;
+let API_BASE="https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=";
+
+let map=L.map('map').setView([59,25],13);
+
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{maxZoom:19}
+).addTo(map);
+
 let marker;
 let routeLine;
 
 let rawPoints=[];
-let snappedPath=[];
+let snapped=[];
 
-function init(){
+document.getElementById("mini").onclick=()=>{
 
-map=new google.maps.Map(document.getElementById("map"),{
-zoom:14,
-center:{lat:59,lng:25}
-});
+document.getElementById("panel").classList.toggle("open");
 
-marker=new google.maps.Marker({map:map});
+}
+
+/* SLIDER */
+
+let slider=document.getElementById("pointSlider");
+
+slider.oninput=function(){
+
+pointLimit=this.value;
+
+document.getElementById("pointCount").innerHTML=pointLimit;
+
+}
+
+slider.onchange=function(){
 
 loadData();
 
 }
 
+/* LOAD DATA */
+
+loadData();
+
 async function loadData(){
+
+let API=API_BASE+pointLimit;
 
 let cached=localStorage.getItem("gpscache");
 
 if(cached){
+
 rawPoints=JSON.parse(cached);
+
 process();
+
 }
 
 let res=await fetch(API);
@@ -89,7 +189,13 @@ process();
 
 }
 
+/* PROCESS */
+
 async function process(){
+
+if(routeLine){
+map.removeLayer(routeLine);
+}
 
 if(rawPoints.length<2)return;
 
@@ -97,98 +203,65 @@ await snapRoute();
 
 drawRoute();
 
-setupTimeline();
-
-calcSpeed();
-
 drawBattery();
 
+updateMini();
+
+animateMarker();
+
 }
+
+/* SNAP TO ROAD */
 
 async function snapRoute(){
 
-let service=new google.maps.DirectionsService();
+let coords=rawPoints
+.map(p=>p.lon+","+p.lat)
+.join(";");
 
-let waypoints=[];
+let url=
+"https://router.project-osrm.org/match/v1/driving/"
++coords+
+"?overview=full&geometries=geojson";
 
-let step=Math.ceil(rawPoints.length/20);
+let res=await fetch(url);
 
-for(let i=step;i<rawPoints.length-step;i+=step){
+let data=await res.json();
 
-waypoints.push({
-location:new google.maps.LatLng(rawPoints[i].lat,rawPoints[i].lon),
-stopover:false
-});
-
-}
-
-let result=await service.route({
-
-origin:new google.maps.LatLng(rawPoints[0].lat,rawPoints[0].lon),
-
-destination:new google.maps.LatLng(rawPoints[rawPoints.length-1].lat,rawPoints[rawPoints.length-1].lon),
-
-waypoints:waypoints,
-
-travelMode:"DRIVING"
-
-});
-
-snappedPath=result.routes[0].overview_path;
+snapped=data.matchings[0].geometry.coordinates;
 
 }
+
+/* DRAW ROUTE */
 
 function drawRoute(){
 
-routeLine=new google.maps.Polyline({
+let latlngs=snapped.map(c=>[c[1],c[0]]);
 
-path:snappedPath,
+routeLine=L.polyline(latlngs,{
+color:"red",
+weight:4
+}).addTo(map);
 
-map:map,
+map.fitBounds(routeLine.getBounds());
 
-strokeColor:"#ff0000",
-
-strokeWeight:4
-
-});
-
-let bounds=new google.maps.LatLngBounds();
-
-snappedPath.forEach(p=>bounds.extend(p));
-
-map.fitBounds(bounds);
+marker=L.marker(latlngs[0]).addTo(map);
 
 }
 
-function setupTimeline(){
+/* MARKER ANIMATION */
 
-let slider=document.getElementById("timeline");
+function animateMarker(){
 
-slider.max=snappedPath.length-1;
-
-slider.oninput=function(){
-
-let pos=snappedPath[this.value];
-
-marker.setPosition(pos);
-
-};
-
-animate();
-
-}
-
-function animate(){
+let latlngs=snapped.map(c=>[c[1],c[0]]);
 
 let i=0;
 
 setInterval(()=>{
 
-if(i>=snappedPath.length)return;
+if(i>=latlngs.length)return;
 
-marker.setPosition(snappedPath[i]);
-
-document.getElementById("timeline").value=i;
+marker.setLatLng(latlngs[i]);
 
 i++;
 
@@ -196,101 +269,54 @@ i++;
 
 }
 
-function calcSpeed(){
+/* MINI INFO */
 
-let speeds=[];
+function updateMini(){
 
-for(let i=1;i<rawPoints.length;i++){
+let last=rawPoints[rawPoints.length-1];
 
-let d=dist(
+let t=new Date(last.time);
 
-rawPoints[i-1].lat,
+document.getElementById("time").innerHTML=
+t.toLocaleTimeString();
 
-rawPoints[i-1].lon,
+document.getElementById("battery").innerHTML=
+"🔋 "+last.battery+"V";
 
-rawPoints[i].lat,
-
-rawPoints[i].lon
-
-);
-
-let t=(new Date(rawPoints[i].time)-new Date(rawPoints[i-1].time))/1000;
-
-let s=(d/t)*3.6;
-
-speeds.push(s);
+document.getElementById("signal").innerHTML=
+"📶 "+last.signal;
 
 }
 
-let avg=speeds.reduce((a,b)=>a+b,0)/speeds.length;
-
-document.getElementById("speed").innerHTML="Average speed: "+avg.toFixed(1)+" km/h";
-
-}
-
-function dist(lat1,lon1,lat2,lon2){
-
-let R=6371e3;
-
-let φ1=lat1*Math.PI/180;
-
-let φ2=lat2*Math.PI/180;
-
-let Δφ=(lat2-lat1)*Math.PI/180;
-
-let Δλ=(lon2-lon1)*Math.PI/180;
-
-let a=Math.sin(Δφ/2)*Math.sin(Δφ/2)+
-
-Math.cos(φ1)*Math.cos(φ2)*
-
-Math.sin(Δλ/2)*Math.sin(Δλ/2);
-
-let c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-
-return R*c;
-
-}
+/* BATTERY GRAPH */
 
 function drawBattery(){
 
 let ctx=document.getElementById("batteryChart");
 
 let labels=[];
-
 let data=[];
 
 rawPoints.forEach(p=>{
 
-labels.push(p.time);
+labels.push(new Date(p.time).toLocaleTimeString());
 
 data.push(p.battery);
 
 });
 
 new Chart(ctx,{
-
 type:"line",
-
 data:{
-
 labels:labels,
-
 datasets:[{
-
 label:"Battery",
-
 data:data
-
 }]
-
 }
-
 });
 
 }
-
-window.onload=init;
 
 </script>
 
