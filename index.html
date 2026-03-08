@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>OSM GPS Tracker</title>
+<title>GPS Tracker</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -10,7 +10,6 @@
 
 html,body{
 margin:0;
-padding:0;
 height:100%;
 font-family:Arial;
 }
@@ -20,15 +19,15 @@ height:100%;
 width:100%;
 }
 
-/* side panel */
+/* PAREM PANEEL */
 
 #panel{
 position:absolute;
 right:0;
 top:0;
 height:100%;
-width:60px;
-background:rgba(30,30,30,0.65);
+width:65px;
+background:rgba(30,30,30,0.6);
 color:white;
 transition:0.3s;
 overflow:hidden;
@@ -39,20 +38,22 @@ z-index:1000;
 width:320px;
 }
 
-#panelHeader{
-padding:10px;
+/* KINNINE RIBA */
+
+#header{
+padding:8px;
 cursor:pointer;
 }
 
-#timeNow{
+#clock{
 font-size:16px;
 margin-bottom:8px;
 }
 
 #batteryBar{
-height:12px;
+height:10px;
 background:#444;
-border-radius:6px;
+border-radius:5px;
 overflow:hidden;
 }
 
@@ -62,8 +63,20 @@ background:#4caf50;
 width:0%;
 }
 
-#content{
+#signal{
+margin-top:6px;
+font-size:12px;
+}
+
+/* AVATUD PANEEL */
+
+#panelContent{
 padding:15px;
+display:none;
+}
+
+#panel.open #panelContent{
+display:block;
 }
 
 .slider{
@@ -74,63 +87,76 @@ label{
 font-size:14px;
 }
 
+.info{
+margin-top:8px;
+font-size:13px;
+white-space:pre-line;
+}
+
 </style>
 
 </head>
+
 <body>
 
 <div id="map"></div>
 
 <div id="panel">
 
-<div id="panelHeader" onclick="togglePanel()">
+<div id="header" onclick="togglePanel()">
 
-<div id="timeNow">--:--</div>
+<div id="clock">--:--</div>
 
 <div id="batteryBar">
 <div id="batteryFill"></div>
 </div>
 
+<div id="signal">📶</div>
+
 </div>
 
-<div id="content">
+<div id="panelContent">
 
-<label>Ajanihe (30min samm)</label>
+<label>Ajas tagasi (30 min samm)</label>
 <input id="timeSlider" type="range" min="0" max="0" value="0" class="slider">
 
-<div id="timeInfo"></div>
+<div id="timeInfo" class="info"></div>
 
 <br>
 
 <label>Punktide arv</label>
 <input id="pointsSlider" type="range" min="1" max="500" value="100" class="slider">
+
 <div id="pointsLabel">100</div>
 
 <br>
 
 <label>Päringu intervall (sek)</label>
 <input id="refreshSlider" type="range" min="5" max="60" value="10" class="slider">
+
 <div id="refreshLabel">10</div>
 
 </div>
 
 </div>
 
+
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-/* ============================= */
-/* MUUDETAVAD SEADED */
-/* ============================= */
+/* ========================= */
+/* MUUDA AINULT SEDA */
+/* ========================= */
 
 const API_URL="AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g";
 
-let REFRESH_INTERVAL=10000;
+/* ========================= */
 
-/* ============================= */
+let refreshSeconds=10;
+let refreshTimer=null;
 
-let map=L.map('map').setView([58.7,25.0],7);
+let map=L.map('map').setView([58.7,25],7);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 maxZoom:19
@@ -138,23 +164,16 @@ maxZoom:19
 
 let marker=L.marker([58.7,25]).addTo(map);
 
-let routeLine=L.polyline([],{color:'red',weight:4}).addTo(map);
+let routeLine=L.polyline([],{
+color:'red',
+weight:4
+}).addTo(map);
 
-let allPoints=[];
+let points=[];
 
-let cached=localStorage.getItem("gps_cache");
-
-if(cached){
-allPoints=JSON.parse(cached);
-}
-
-function togglePanel(){
-document.getElementById("panel").classList.toggle("open");
-}
-
-/* ============================= */
-/* KELL */
-/* ============================= */
+/* ========================= */
+/* CLOCK */
+/* ========================= */
 
 function updateClock(){
 
@@ -163,30 +182,40 @@ let d=new Date();
 let h=String(d.getHours()).padStart(2,"0");
 let m=String(d.getMinutes()).padStart(2,"0");
 
-document.getElementById("timeNow").innerText=h+":"+m;
+document.getElementById("clock").innerText=h+":"+m;
 
 }
 
 setInterval(updateClock,1000);
 updateClock();
 
-/* ============================= */
-/* AKU */
-/* ============================= */
+/* ========================= */
+/* PANEL */
+/* ========================= */
 
-function updateBattery(v){
+function togglePanel(){
 
-let pct=(v-3.3)/(4.2-3.3)*100;
-
-pct=Math.max(0,Math.min(100,pct));
-
-document.getElementById("batteryFill").style.width=pct+"%";
+document.getElementById("panel").classList.toggle("open");
 
 }
 
-/* ============================= */
-/* API FETCH */
-/* ============================= */
+/* ========================= */
+/* BATTERY */
+/* ========================= */
+
+function batteryPercent(v){
+
+let p=(v-3.3)/(4.2-3.3)*100;
+
+p=Math.max(0,Math.min(100,p));
+
+document.getElementById("batteryFill").style.width=p+"%";
+
+}
+
+/* ========================= */
+/* FETCH */
+/* ========================= */
 
 async function loadPoints(){
 
@@ -200,7 +229,7 @@ let data=await res.json();
 
 if(!data.length)return;
 
-allPoints=data;
+points=data;
 
 localStorage.setItem("gps_cache",JSON.stringify(data));
 
@@ -208,20 +237,27 @@ updateMap();
 
 }catch(e){
 
-console.log("offline");
+let cache=localStorage.getItem("gps_cache");
+
+if(cache){
+
+points=JSON.parse(cache);
+
+updateMap();
 
 }
 
 }
 
-setInterval(loadPoints,REFRESH_INTERVAL);
-loadPoints();
+}
 
-/* ============================= */
-/* OSRM ROUTING */
-/* ============================= */
+/* ========================= */
+/* ROUTING */
+/* ========================= */
 
 async function route(coords){
+
+if(coords.length<2) return coords;
 
 let list=coords.map(c=>c[1]+","+c[0]).join(";");
 
@@ -235,68 +271,68 @@ return data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
 
 }
 
-/* ============================= */
+/* ========================= */
 /* MAP UPDATE */
-/* ============================= */
+/* ========================= */
 
 async function updateMap(){
 
-if(allPoints.length==0)return;
+if(points.length==0) return;
 
 let offset=document.getElementById("timeSlider").value;
 
-let index=allPoints.length-1-offset;
+let index=points.length-1-offset;
 
-if(index<0)index=0;
+if(index<0) index=0;
 
-let selected=allPoints[index];
+let selected=points[index];
 
-let start=Math.max(0,index-document.getElementById("pointsSlider").value);
+let count=document.getElementById("pointsSlider").value;
 
-let subset=allPoints.slice(start,index+1);
+let start=Math.max(0,index-count);
+
+let subset=points.slice(start,index+1);
 
 let coords=subset.map(p=>[p.lat,p.lon]);
-
-if(coords.length>1){
 
 let routed=await route(coords);
 
 routeLine.setLatLngs(routed);
 
-}
-
 marker.setLatLng([selected.lat,selected.lon]);
 
 map.setView([selected.lat,selected.lon],14);
 
-updateBattery(selected.battery);
+batteryPercent(selected.battery);
+
+document.getElementById("signal").innerText="📶 "+selected.signal;
 
 updateTimeInfo(selected.time,offset);
 
 }
 
-/* ============================= */
+/* ========================= */
 /* TIME INFO */
-/* ============================= */
+/* ========================= */
 
-function updateTimeInfo(lastTime,offset){
+function updateTimeInfo(time,offset){
 
-let t=new Date(lastTime);
+let t=new Date(time);
 
 let h=String(t.getHours()).padStart(2,"0");
 let m=String(t.getMinutes()).padStart(2,"0");
 
-let back=offset*0.5;
+let back=offset*30;
 
 document.getElementById("timeInfo").innerText=
 "Viimane punkt: "+h+":"+m+
-"\nTagasi: "+back+"h";
+"\nTagasi: "+back+" min";
 
 }
 
-/* ============================= */
+/* ========================= */
 /* SLIDERS */
-/* ============================= */
+/* ========================= */
 
 document.getElementById("pointsSlider").oninput=function(){
 
@@ -308,9 +344,11 @@ updateMap();
 
 document.getElementById("refreshSlider").oninput=function(){
 
+refreshSeconds=this.value;
+
 document.getElementById("refreshLabel").innerText=this.value;
 
-REFRESH_INTERVAL=this.value*1000;
+startRefresh();
 
 };
 
@@ -320,19 +358,34 @@ updateMap();
 
 };
 
-/* ============================= */
-/* TIME SLIDER MAX */
-/* ============================= */
+/* ========================= */
+/* SLIDER RANGE */
+/* ========================= */
 
 function updateSlider(){
 
-let max=Math.floor(allPoints.length/60);
+let max=Math.floor(points.length/60);
 
 document.getElementById("timeSlider").max=max;
 
 }
 
 setInterval(updateSlider,5000);
+
+/* ========================= */
+/* REFRESH TIMER */
+/* ========================= */
+
+function startRefresh(){
+
+if(refreshTimer) clearInterval(refreshTimer);
+
+refreshTimer=setInterval(loadPoints,refreshSeconds*1000);
+
+}
+
+startRefresh();
+loadPoints();
 
 </script>
 
