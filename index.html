@@ -2,18 +2,15 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>GPS Tracker</title>
+<title>OSM GPS Tracker</title>
 
-<link rel="stylesheet"
-href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 
 html,body{
 margin:0;
+padding:0;
 height:100%;
 font-family:Arial;
 }
@@ -23,393 +20,319 @@ height:100%;
 width:100%;
 }
 
-/* PANEL */
+/* side panel */
 
 #panel{
-
 position:absolute;
-top:0;
 right:0;
-
+top:0;
 height:100%;
-
-width:65px;
-
-background:rgba(30,30,30,0.75);
-
+width:60px;
+background:rgba(30,30,30,0.65);
 color:white;
-
 transition:0.3s;
-
-z-index:1000;
-
 overflow:hidden;
-
-backdrop-filter:blur(3px);
-
+z-index:1000;
 }
 
 #panel.open{
 width:320px;
 }
 
-#mini{
-
+#panelHeader{
 padding:10px;
-text-align:center;
 cursor:pointer;
-
 }
 
-.stat{
-margin:10px 0;
-font-size:14px;
+#timeNow{
+font-size:16px;
+margin-bottom:8px;
 }
 
-/* BATTERY BAR */
-
-.progress{
-
-width:100%;
-height:10px;
-background:#555;
-border-radius:5px;
+#batteryBar{
+height:12px;
+background:#444;
+border-radius:6px;
 overflow:hidden;
-
 }
 
-.progressBar{
-
+#batteryFill{
 height:100%;
 background:#4caf50;
 width:0%;
-
 }
 
-/* PANEL CONTENT */
-
-#panelContent{
-
+#content{
 padding:15px;
-display:none;
-
 }
 
-#panel.open #panelContent{
-display:block;
-}
-
-/* GRAPH */
-
-#batteryChart{
+.slider{
 width:100%;
-height:200px;
 }
 
-.sliderBox{
-margin-top:20px;
-}
-
-#timeSlider{
-width:100%;
+label{
+font-size:14px;
 }
 
 </style>
-</head>
 
+</head>
 <body>
 
 <div id="map"></div>
 
 <div id="panel">
 
-<div id="mini">
+<div id="panelHeader" onclick="togglePanel()">
 
-<div class="stat" id="clock">--:--</div>
+<div id="timeNow">--:--</div>
 
-<div class="stat">
-
-<div class="progress">
-<div class="progressBar" id="batteryBar"></div>
+<div id="batteryBar">
+<div id="batteryFill"></div>
 </div>
-
-<div id="batteryPercent">--%</div>
 
 </div>
 
-<div class="stat" id="signal">📶 --</div>
+<div id="content">
 
-</div>
+<label>Ajanihe (30min samm)</label>
+<input id="timeSlider" type="range" min="0" max="0" value="0" class="slider">
 
-<div id="panelContent">
+<div id="timeInfo"></div>
 
-<h3>Battery</h3>
+<br>
 
-<canvas id="batteryChart"></canvas>
+<label>Punktide arv</label>
+<input id="pointsSlider" type="range" min="1" max="500" value="100" class="slider">
+<div id="pointsLabel">100</div>
 
-<div class="sliderBox">
+<br>
 
-<h3>Punktide arv</h3>
-
-<input type="range"
-id="pointSlider"
-min="1"
-max="500"
-value="100">
-
-<div id="pointCount">100</div>
-
-</div>
-
-<div class="sliderBox">
-
-<h3>Aeg</h3>
-
-<input type="range"
-id="timeSlider">
+<label>Päringu intervall (sek)</label>
+<input id="refreshSlider" type="range" min="5" max="60" value="10" class="slider">
+<div id="refreshLabel">10</div>
 
 </div>
 
 </div>
 
-</div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-/* API */
+/* ============================= */
+/* MUUDETAVAD SEADED */
+/* ============================= */
 
-let pointLimit=100;
+const API_URL="AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g";
 
-const API_BASE=
-"https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=";
+let REFRESH_INTERVAL=10000;
 
+/* ============================= */
 
-/* MAP */
+let map=L.map('map').setView([58.7,25.0],7);
 
-let map=L.map('map');
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+maxZoom:19
+}).addTo(map);
 
-let estoniaBounds=[
-[57.5,21.5],
-[59.8,28.2]
-];
+let marker=L.marker([58.7,25]).addTo(map);
 
-map.fitBounds(estoniaBounds);
+let routeLine=L.polyline([],{color:'red',weight:4}).addTo(map);
 
-L.tileLayer(
-'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-{maxZoom:19}
-).addTo(map);
+let allPoints=[];
 
+let cached=localStorage.getItem("gps_cache");
 
-/* PANEL */
+if(cached){
+allPoints=JSON.parse(cached);
+}
 
-document.getElementById("mini").onclick=()=>{
+function togglePanel(){
 document.getElementById("panel").classList.toggle("open");
-};
+}
 
+/* ============================= */
+/* KELL */
+/* ============================= */
 
-/* CLOCK */
+function updateClock(){
 
-setInterval(()=>{
+let d=new Date();
 
-let t=new Date();
+let h=String(d.getHours()).padStart(2,"0");
+let m=String(d.getMinutes()).padStart(2,"0");
 
-document.getElementById("clock").innerHTML=
-t.toLocaleTimeString('et-EE',{hour12:false});
-
-},1000);
-
-
-/* SLIDERS */
-
-let pointSlider=document.getElementById("pointSlider");
-
-pointSlider.oninput=function(){
-
-pointLimit=this.value;
-
-document.getElementById("pointCount").innerHTML=pointLimit;
-
-};
-
-pointSlider.onchange=function(){
-
-loadData();
-
-};
-
-let timeSlider=document.getElementById("timeSlider");
-
-timeSlider.oninput=function(){
-
-drawSelected();
-
-};
-
-
-/* GLOBAL */
-
-let rawPoints=[];
-let marker;
-let routeLine;
-
-
-/* LOAD DATA */
-
-loadData();
-
-async function loadData(){
-
-let API=API_BASE+pointLimit;
-
-let res=await fetch(API);
-
-rawPoints=await res.json();
-
-if(rawPoints.length<2)return;
-
-timeSlider.min=0;
-timeSlider.max=rawPoints.length-1;
-timeSlider.value=rawPoints.length-1;
-
-drawSelected();
-
-drawBattery();
+document.getElementById("timeNow").innerText=h+":"+m;
 
 }
 
+setInterval(updateClock,1000);
+updateClock();
 
-/* SELECTED TIME */
+/* ============================= */
+/* AKU */
+/* ============================= */
 
-async function drawSelected(){
+function updateBattery(v){
 
-let index=parseInt(timeSlider.value);
+let pct=(v-3.3)/(4.2-3.3)*100;
 
-let start=Math.max(0,index-pointLimit+1);
+pct=Math.max(0,Math.min(100,pct));
 
-let points=rawPoints.slice(start,index+1);
-
-await drawRoute(points);
-
-updateMini(points[points.length-1]);
+document.getElementById("batteryFill").style.width=pct+"%";
 
 }
 
+/* ============================= */
+/* API FETCH */
+/* ============================= */
 
-/* ROUTE */
-
-async function drawRoute(points){
-
-if(routeLine){
-map.removeLayer(routeLine);
-}
-
-let snapped=[];
+async function loadPoints(){
 
 try{
 
-let coords=points
-.map(p=>p.lon+","+p.lat)
-.join(";");
+let limit=document.getElementById("pointsSlider").value;
 
-let url=
-"https://router.project-osrm.org/match/v1/driving/"
-+coords+
-"?overview=full&geometries=geojson";
+let res=await fetch(API_URL+"&points="+limit);
+
+let data=await res.json();
+
+if(!data.length)return;
+
+allPoints=data;
+
+localStorage.setItem("gps_cache",JSON.stringify(data));
+
+updateMap();
+
+}catch(e){
+
+console.log("offline");
+
+}
+
+}
+
+setInterval(loadPoints,REFRESH_INTERVAL);
+loadPoints();
+
+/* ============================= */
+/* OSRM ROUTING */
+/* ============================= */
+
+async function route(coords){
+
+let list=coords.map(c=>c[1]+","+c[0]).join(";");
+
+let url="https://router.project-osrm.org/route/v1/driving/"+list+"?overview=full&geometries=geojson";
 
 let res=await fetch(url);
 
 let data=await res.json();
 
-if(data.code==="Ok"){
-
-snapped=data.matchings[0].geometry.coordinates;
-
-}else{
-
-throw "routing fail";
+return data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
 
 }
 
-}catch(e){
+/* ============================= */
+/* MAP UPDATE */
+/* ============================= */
 
-snapped=points.map(p=>[p.lon,p.lat]);
+async function updateMap(){
 
-}
+if(allPoints.length==0)return;
 
-let latlngs=snapped.map(c=>[c[1],c[0]]);
+let offset=document.getElementById("timeSlider").value;
 
-routeLine=L.polyline(latlngs,{
-color:"red",
-weight:4
-}).addTo(map);
+let index=allPoints.length-1-offset;
 
-let last=points[points.length-1];
+if(index<0)index=0;
 
-if(marker){
-marker.setLatLng([last.lat,last.lon]);
-}else{
-marker=L.marker([last.lat,last.lon]).addTo(map);
-}
+let selected=allPoints[index];
 
-map.setView([last.lat,last.lon],15);
+let start=Math.max(0,index-document.getElementById("pointsSlider").value);
 
-}
+let subset=allPoints.slice(start,index+1);
 
+let coords=subset.map(p=>[p.lat,p.lon]);
 
-/* MINI PANEL */
+if(coords.length>1){
 
-function updateMini(last){
+let routed=await route(coords);
 
-let v=last.battery;
-
-let percent=((v-3.3)/(4.2-3.3))*100;
-
-percent=Math.max(0,Math.min(100,percent));
-
-document.getElementById("batteryBar").style.width=
-percent+"%";
-
-document.getElementById("batteryPercent").innerHTML=
-percent.toFixed(0)+"%";
-
-document.getElementById("signal").innerHTML=
-"📶 "+last.signal;
+routeLine.setLatLngs(routed);
 
 }
 
+marker.setLatLng([selected.lat,selected.lon]);
 
-/* BATTERY GRAPH */
+map.setView([selected.lat,selected.lon],14);
 
-function drawBattery(){
+updateBattery(selected.battery);
 
-let ctx=document.getElementById("batteryChart");
-
-let labels=[];
-let data=[];
-
-rawPoints.forEach(p=>{
-
-labels.push(new Date(p.time).toLocaleTimeString());
-data.push(p.battery);
-
-});
-
-new Chart(ctx,{
-
-type:"line",
-
-data:{
-labels:labels,
-datasets:[{
-label:"Battery",
-data:data
-}]
-}
-
-});
+updateTimeInfo(selected.time,offset);
 
 }
+
+/* ============================= */
+/* TIME INFO */
+/* ============================= */
+
+function updateTimeInfo(lastTime,offset){
+
+let t=new Date(lastTime);
+
+let h=String(t.getHours()).padStart(2,"0");
+let m=String(t.getMinutes()).padStart(2,"0");
+
+let back=offset*0.5;
+
+document.getElementById("timeInfo").innerText=
+"Viimane punkt: "+h+":"+m+
+"\nTagasi: "+back+"h";
+
+}
+
+/* ============================= */
+/* SLIDERS */
+/* ============================= */
+
+document.getElementById("pointsSlider").oninput=function(){
+
+document.getElementById("pointsLabel").innerText=this.value;
+
+updateMap();
+
+};
+
+document.getElementById("refreshSlider").oninput=function(){
+
+document.getElementById("refreshLabel").innerText=this.value;
+
+REFRESH_INTERVAL=this.value*1000;
+
+};
+
+document.getElementById("timeSlider").oninput=function(){
+
+updateMap();
+
+};
+
+/* ============================= */
+/* TIME SLIDER MAX */
+/* ============================= */
+
+function updateSlider(){
+
+let max=Math.floor(allPoints.length/60);
+
+document.getElementById("timeSlider").max=max;
+
+}
+
+setInterval(updateSlider,5000);
 
 </script>
 
