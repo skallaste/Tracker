@@ -140,12 +140,10 @@ async function loadData(isAutoUpdate = false) {
 
     rawPoints = data;
     
-    // Uuendame slaideri piire
     const oldMax = tSlider.max;
     const oldVal = tSlider.value;
     tSlider.max = rawPoints.length - 1;
 
-    // Kui slaider oli lõpus (Live mode), liigutame ta uue punkti peale
     if (!isAutoUpdate || oldVal == oldMax) {
       tSlider.value = rawPoints.length - 1;
       currentIndex = rawPoints.length - 1;
@@ -163,11 +161,9 @@ function updateUI(useOSRM = true) {
   if (rawPoints.length === 0) return;
   const current = rawPoints[currentIndex];
 
-  // Kellaaeg ja Info
   const t = new Date(current.time || current.timestamp);
   document.getElementById("timeIndicator").innerHTML = t.toLocaleString('et-EE');
   
-  // Aku riba ja Levi
   const v = current.battery || current.vbat || 0;
   const volt = v > 100 ? v / 1000 : v;
   let pct = ((volt - 3.3) / (4.2 - 3.3)) * 100;
@@ -177,32 +173,44 @@ function updateUI(useOSRM = true) {
   document.getElementById("batteryPercent").innerHTML = pct.toFixed(0) + "%";
   document.getElementById("signal").innerHTML = "📶 " + (current.signal || "--");
 
-  // Saba arvutus
   const start = Math.max(0, currentIndex - trailLength + 1);
   const points = rawPoints.slice(start, currentIndex + 1);
   drawMap(points, useOSRM);
 }
 
-/* KAARDI JOONISTAMINE */
+/* TÄIUSTATUD KAARDI JOONISTAMINE (OSRM MATCH) */
 async function drawMap(points, useOSRM) {
   if (routeLine) map.removeLayer(routeLine);
   if (points.length === 0) return;
 
   let latlngs = points.map(p => [p.lat, p.lon]);
 
-  // OSRM Snap (ainult kui hiir on lahti lastud)
-  if (useOSRM && points.length > 1 && points.length < 100) {
+  if (useOSRM && points.length > 1) {
     try {
-      const coords = points.map(p => p.lon + "," + p.lat).join(";");
-      const res = await fetch(`https://router.project-osrm.org/match/v1/driving/${coords}?overview=full&geometries=geojson`);
+      // Võtame maksimaalselt 100 punkti (OSRM Match limiit)
+      let segment = points.slice(-100); 
+      const coords = segment.map(p => p.lon + "," + p.lat).join(";");
+      
+      // Kasutame MATCH teenust, et kleepida punktid teedele
+      const res = await fetch(`https://router.project-osrm.org/match/v1/driving/${coords}?overview=full&geometries=geojson&snapping=any`);
       const data = await res.json();
-      if (data.code === "Ok") {
+      
+      if (data.code === "Ok" && data.matchings && data.matchings.length > 0) {
+        // Match tagastab täpsed tee koordinaadid
         latlngs = data.matchings[0].geometry.coordinates.map(c => [c[1], c[0]]);
       }
-    } catch(e) {}
+    } catch(e) {
+      console.warn("OSRM Match ebaõnnestus, joonistan otsepunktid.");
+    }
   }
 
-  routeLine = L.polyline(latlngs, {color: '#f44336', weight: 4, opacity: 0.7}).addTo(map);
+  // Joonistame sujuva joone
+  routeLine = L.polyline(latlngs, {
+    color: '#f44336', 
+    weight: 5, 
+    opacity: 0.8,
+    lineJoin: 'round'
+  }).addTo(map);
   
   const last = points[points.length - 1];
   if (!marker) {
@@ -211,24 +219,19 @@ async function drawMap(points, useOSRM) {
     marker.setLatLng([last.lat, last.lon]);
   }
 
-  // Kui vaatame viimast punkti, hoiame kaarti keskel
   if (currentIndex == tSlider.max) {
     map.setView([last.lat, last.lon]);
   }
 }
 
-/* GRAAFIKU JOONISTAMINE (STABIILNE VERSIOON) */
+/* GRAAFIKU JOONISTAMINE */
 function drawBatteryChart() {
   const ctx = document.getElementById("batteryChart").getContext('2d');
-  
-  // 1. Kustutame vana graafiku täielikult, et vältida mälu täitumist
-  if (batteryChartInstance) {
-    batteryChartInstance.destroy();
-  }
+  if (batteryChartInstance) batteryChartInstance.destroy();
 
   const labels = [];
   const data = [];
-  let minV = 5, maxV = 0;
+  let minV = 4.5, maxV = 0;
   const limit24h = Date.now() - (24 * 60 * 60 * 1000);
 
   rawPoints.forEach(p => {
@@ -236,10 +239,8 @@ function drawBatteryChart() {
     if (time > limit24h) {
       let v = p.battery || p.vbat || 0;
       let volt = v > 100 ? v / 1000 : v;
-      
-      // Ainult reaalsed väärtused
-      if (volt > 2.5 && volt < 4.5) {
-        labels.push(""); // Hoiame puhtana
+      if (volt > 2.0 && volt < 4.6) {
+        labels.push(""); 
         data.push(volt);
         if (volt < minV) minV = volt;
         if (volt > maxV) maxV = volt;
@@ -251,7 +252,6 @@ function drawBatteryChart() {
     document.getElementById("batteryStats").innerHTML = `Min: ${minV.toFixed(2)}V | Max: ${maxV.toFixed(2)}V`;
   }
 
-  // 2. Loome uue puhta graafiku
   batteryChartInstance = new Chart(ctx, {
     type: 'line',
     data: {
@@ -268,7 +268,7 @@ function drawBatteryChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: false, // Kiirem töö
+      animation: false,
       scales: {
         x: { display: false },
         y: { 
@@ -285,7 +285,7 @@ function drawBatteryChart() {
 
 /* START JA AUTO-REFRESH */
 loadData();
-setInterval(() => loadData(true), 20000); // Uuendus iga 20 sekundi järel
+setInterval(() => loadData(true), 20000);
 
 </script>
 </body>
