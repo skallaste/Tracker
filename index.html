@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <title>GPS Tracker</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 
@@ -19,82 +23,98 @@ height:100%;
 width:100%;
 }
 
-/* PAREM PANEEL */
+/* PANEL */
 
 #panel{
+
 position:absolute;
-right:0;
 top:0;
+right:0;
+
 height:100%;
+
 width:65px;
-background:rgba(30,30,30,0.6);
+
+background:rgba(30,30,30,0.75);
+
 color:white;
+
 transition:0.3s;
-overflow:hidden;
+
 z-index:1000;
+
+overflow:hidden;
+
+backdrop-filter:blur(3px);
+
 }
 
 #panel.open{
 width:320px;
 }
 
-/* KINNINE RIBA */
+#mini{
 
-#header{
-padding:8px;
+padding:10px;
+text-align:center;
 cursor:pointer;
+
 }
 
-#clock{
-font-size:16px;
-margin-bottom:8px;
+.stat{
+margin:10px 0;
+font-size:14px;
 }
 
-#batteryBar{
+/* BATTERY BAR */
+
+.progress{
+
+width:100%;
 height:10px;
-background:#444;
+background:#555;
 border-radius:5px;
 overflow:hidden;
+
 }
 
-#batteryFill{
+.progressBar{
+
 height:100%;
 background:#4caf50;
 width:0%;
+
 }
 
-#signal{
-margin-top:6px;
-font-size:12px;
-}
-
-/* AVATUD PANEEL */
+/* PANEL CONTENT */
 
 #panelContent{
+
 padding:15px;
 display:none;
+
 }
 
 #panel.open #panelContent{
 display:block;
 }
 
-.slider{
+/* GRAPH */
+
+#batteryChart{
+width:100%;
+height:200px;
+}
+
+.sliderBox{
+margin-top:20px;
+}
+
+#timeSlider{
 width:100%;
 }
 
-label{
-font-size:14px;
-}
-
-.info{
-margin-top:8px;
-font-size:13px;
-white-space:pre-line;
-}
-
 </style>
-
 </head>
 
 <body>
@@ -103,289 +123,293 @@ white-space:pre-line;
 
 <div id="panel">
 
-<div id="header" onclick="togglePanel()">
+<div id="mini">
 
-<div id="clock">--:--</div>
+<div class="stat" id="clock">--:--</div>
 
-<div id="batteryBar">
-<div id="batteryFill"></div>
+<div class="stat">
+
+<div class="progress">
+<div class="progressBar" id="batteryBar"></div>
 </div>
 
-<div id="signal">📶</div>
+<div id="batteryPercent">--%</div>
+
+</div>
+
+<div class="stat" id="signal">📶 --</div>
 
 </div>
 
 <div id="panelContent">
 
-<label>Ajas tagasi (30 min samm)</label>
-<input id="timeSlider" type="range" min="0" max="0" value="0" class="slider">
+<h3>Battery</h3>
 
-<div id="timeInfo" class="info"></div>
+<canvas id="batteryChart"></canvas>
 
-<br>
+<div class="sliderBox">
 
-<label>Punktide arv</label>
-<input id="pointsSlider" type="range" min="1" max="500" value="100" class="slider">
+<h3>Punktide arv</h3>
 
-<div id="pointsLabel">100</div>
+<input type="range"
+id="pointSlider"
+min="1"
+max="500"
+value="100">
 
-<br>
+<div id="pointCount">100</div>
 
-<label>Päringu intervall (sek)</label>
-<input id="refreshSlider" type="range" min="5" max="60" value="10" class="slider">
+</div>
 
-<div id="refreshLabel">10</div>
+<div class="sliderBox">
+
+<h3>Aeg</h3>
+
+<input type="range"
+id="timeSlider">
 
 </div>
 
 </div>
 
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+</div>
 
 <script>
 
-/* ========================= */
-/* MUUDA AINULT SEDA */
-/* ========================= */
+/* API */
 
-const API_URL="AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g";
+let pointLimit=100;
 
-/* ========================= */
+const API_BASE=
+"https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=";
 
-let refreshSeconds=10;
-let refreshTimer=null;
 
-let map=L.map('map').setView([58.7,25],7);
+/* MAP */
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-maxZoom:19
-}).addTo(map);
+let map=L.map('map');
 
-let marker=L.marker([58.7,25]).addTo(map);
+let estoniaBounds=[
+[57.5,21.5],
+[59.8,28.2]
+];
 
-let routeLine=L.polyline([],{
-color:'red',
-weight:4
-}).addTo(map);
+map.fitBounds(estoniaBounds);
 
-let points=[];
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{maxZoom:19}
+).addTo(map);
 
-/* ========================= */
-/* CLOCK */
-/* ========================= */
 
-function updateClock(){
-
-let d=new Date();
-
-let h=String(d.getHours()).padStart(2,"0");
-let m=String(d.getMinutes()).padStart(2,"0");
-
-document.getElementById("clock").innerText=h+":"+m;
-
-}
-
-setInterval(updateClock,1000);
-updateClock();
-
-/* ========================= */
 /* PANEL */
-/* ========================= */
 
-function togglePanel(){
-
+document.getElementById("mini").onclick=()=>{
 document.getElementById("panel").classList.toggle("open");
+};
+
+
+/* CLOCK */
+
+setInterval(()=>{
+
+let t=new Date();
+
+document.getElementById("clock").innerHTML=
+t.toLocaleTimeString('et-EE',{hour12:false});
+
+},1000);
+
+
+/* SLIDERS */
+
+let pointSlider=document.getElementById("pointSlider");
+
+pointSlider.oninput=function(){
+
+pointLimit=this.value;
+
+document.getElementById("pointCount").innerHTML=pointLimit;
+
+};
+
+pointSlider.onchange=function(){
+
+loadData();
+
+};
+
+let timeSlider=document.getElementById("timeSlider");
+
+timeSlider.oninput=function(){
+
+drawSelected();
+
+};
+
+
+/* GLOBAL */
+
+let rawPoints=[];
+let marker;
+let routeLine;
+
+
+/* LOAD DATA */
+
+loadData();
+
+async function loadData(){
+
+let API=API_BASE+pointLimit;
+
+let res=await fetch(API);
+
+rawPoints=await res.json();
+
+if(rawPoints.length<2)return;
+
+timeSlider.min=0;
+timeSlider.max=rawPoints.length-1;
+timeSlider.value=rawPoints.length-1;
+
+drawSelected();
+
+drawBattery();
 
 }
 
-/* ========================= */
-/* BATTERY */
-/* ========================= */
 
-function batteryPercent(v){
+/* SELECTED TIME */
 
-let p=(v-3.3)/(4.2-3.3)*100;
+async function drawSelected(){
 
-p=Math.max(0,Math.min(100,p));
+let index=parseInt(timeSlider.value);
 
-document.getElementById("batteryFill").style.width=p+"%";
+let start=Math.max(0,index-pointLimit+1);
+
+let points=rawPoints.slice(start,index+1);
+
+await drawRoute(points);
+
+updateMini(points[points.length-1]);
 
 }
 
-/* ========================= */
-/* FETCH */
-/* ========================= */
 
-async function loadPoints(){
+/* ROUTE */
+
+async function drawRoute(points){
+
+if(routeLine){
+map.removeLayer(routeLine);
+}
+
+let snapped=[];
 
 try{
 
-let limit=document.getElementById("pointsSlider").value;
+let coords=points
+.map(p=>p.lon+","+p.lat)
+.join(";");
 
-let res=await fetch(API_URL+"&points="+limit);
-
-let data=await res.json();
-
-if(!data.length)return;
-
-points=data;
-
-localStorage.setItem("gps_cache",JSON.stringify(data));
-
-updateMap();
-
-}catch(e){
-
-let cache=localStorage.getItem("gps_cache");
-
-if(cache){
-
-points=JSON.parse(cache);
-
-updateMap();
-
-}
-
-}
-
-}
-
-/* ========================= */
-/* ROUTING */
-/* ========================= */
-
-async function route(coords){
-
-if(coords.length<2) return coords;
-
-let list=coords.map(c=>c[1]+","+c[0]).join(";");
-
-let url="https://router.project-osrm.org/route/v1/driving/"+list+"?overview=full&geometries=geojson";
+let url=
+"https://router.project-osrm.org/match/v1/driving/"
++coords+
+"?overview=full&geometries=geojson";
 
 let res=await fetch(url);
 
 let data=await res.json();
 
-return data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+if(data.code==="Ok"){
+
+snapped=data.matchings[0].geometry.coordinates;
+
+}else{
+
+throw "routing fail";
 
 }
 
-/* ========================= */
-/* MAP UPDATE */
-/* ========================= */
+}catch(e){
 
-async function updateMap(){
-
-if(points.length==0) return;
-
-let offset=document.getElementById("timeSlider").value;
-
-let index=points.length-1-offset;
-
-if(index<0) index=0;
-
-let selected=points[index];
-
-let count=document.getElementById("pointsSlider").value;
-
-let start=Math.max(0,index-count);
-
-let subset=points.slice(start,index+1);
-
-let coords=subset.map(p=>[p.lat,p.lon]);
-
-let routed=await route(coords);
-
-routeLine.setLatLngs(routed);
-
-marker.setLatLng([selected.lat,selected.lon]);
-
-map.setView([selected.lat,selected.lon],14);
-
-batteryPercent(selected.battery);
-
-document.getElementById("signal").innerText="📶 "+selected.signal;
-
-updateTimeInfo(selected.time,offset);
+snapped=points.map(p=>[p.lon,p.lat]);
 
 }
 
-/* ========================= */
-/* TIME INFO */
-/* ========================= */
+let latlngs=snapped.map(c=>[c[1],c[0]]);
 
-function updateTimeInfo(time,offset){
+routeLine=L.polyline(latlngs,{
+color:"red",
+weight:4
+}).addTo(map);
 
-let t=new Date(time);
+let last=points[points.length-1];
 
-let h=String(t.getHours()).padStart(2,"0");
-let m=String(t.getMinutes()).padStart(2,"0");
+if(marker){
+marker.setLatLng([last.lat,last.lon]);
+}else{
+marker=L.marker([last.lat,last.lon]).addTo(map);
+}
 
-let back=offset*30;
-
-document.getElementById("timeInfo").innerText=
-"Viimane punkt: "+h+":"+m+
-"\nTagasi: "+back+" min";
+map.setView([last.lat,last.lon],15);
 
 }
 
-/* ========================= */
-/* SLIDERS */
-/* ========================= */
 
-document.getElementById("pointsSlider").oninput=function(){
+/* MINI PANEL */
 
-document.getElementById("pointsLabel").innerText=this.value;
+function updateMini(last){
 
-updateMap();
+let v=last.battery;
 
-};
+let percent=((v-3.3)/(4.2-3.3))*100;
 
-document.getElementById("refreshSlider").oninput=function(){
+percent=Math.max(0,Math.min(100,percent));
 
-refreshSeconds=this.value;
+document.getElementById("batteryBar").style.width=
+percent+"%";
 
-document.getElementById("refreshLabel").innerText=this.value;
+document.getElementById("batteryPercent").innerHTML=
+percent.toFixed(0)+"%";
 
-startRefresh();
-
-};
-
-document.getElementById("timeSlider").oninput=function(){
-
-updateMap();
-
-};
-
-/* ========================= */
-/* SLIDER RANGE */
-/* ========================= */
-
-function updateSlider(){
-
-let max=Math.floor(points.length/60);
-
-document.getElementById("timeSlider").max=max;
+document.getElementById("signal").innerHTML=
+"📶 "+last.signal;
 
 }
 
-setInterval(updateSlider,5000);
 
-/* ========================= */
-/* REFRESH TIMER */
-/* ========================= */
+/* BATTERY GRAPH */
 
-function startRefresh(){
+function drawBattery(){
 
-if(refreshTimer) clearInterval(refreshTimer);
+let ctx=document.getElementById("batteryChart");
 
-refreshTimer=setInterval(loadPoints,refreshSeconds*1000);
+let labels=[];
+let data=[];
 
+rawPoints.forEach(p=>{
+
+labels.push(new Date(p.time).toLocaleTimeString());
+data.push(p.battery);
+
+});
+
+new Chart(ctx,{
+
+type:"line",
+
+data:{
+labels:labels,
+datasets:[{
+label:"Battery",
+data:data
+}]
 }
 
-startRefresh();
-loadPoints();
+});
+
+}
 
 </script>
 
