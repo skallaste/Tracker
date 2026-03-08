@@ -4,7 +4,6 @@
 <head>
 
 <meta charset="utf-8">
-
 <title>GPS Tracker</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
@@ -42,7 +41,7 @@ z-index:1000;
 
 <b>GPS Tracker</b><br>
 
-Points: <input id="points" value="200" size="4">
+Points: <input id="points" value="80" size="4">
 
 <button onclick="loadData()">Refresh</button>
 
@@ -54,7 +53,7 @@ Points: <input id="points" value="200" size="4">
 
 <script>
 
-// PANE SIIA OMA APPS SCRIPT URL
+// GOOGLE SCRIPT API
 const apiBase =
 "https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec";
 
@@ -68,19 +67,68 @@ maxZoom:19
 
 let marker = null;
 let trackLine = null;
-
 let firstLoad = true;
 
+
+// SNAP GPS PUNKTID TEEDELE
+async function snapToRoad(coords){
+
+try{
+
+// OSRM lubab max ~100 punkti
+if(coords.length > 100){
+coords = coords.slice(coords.length-100);
+}
+
+let coordString = coords
+.map(c => c[1] + "," + c[0])
+.join(";");
+
+let url =
+"https://router.project-osrm.org/match/v1/driving/"
++ coordString
++ "?overview=full&geometries=geojson";
+
+const res = await fetch(url);
+const json = await res.json();
+
+if(json.code !== "Ok"){
+
+console.log("OSRM fallback");
+return coords;
+
+}
+
+const snapped = json.matchings[0].geometry.coordinates;
+
+return snapped.map(c => [c[1],c[0]]);
+
+}catch(e){
+
+console.log("match error",e);
+return coords;
+
+}
+
+}
+
+
+// ANDMETE LAADIMINE
 async function loadData(){
 
-let points = document.getElementById("points").value;
+let points = parseInt(document.getElementById("points").value);
+
+// OSRM piirang
+if(points > 100){
+points = 100;
+document.getElementById("points").value = 100;
+}
 
 const url = apiBase + "?api=points&points=" + points;
 
 try{
 
 const response = await fetch(url);
-
 const data = await response.json();
 
 if(!data || data.length === 0) return;
@@ -91,8 +139,13 @@ data.forEach(p=>{
 coords.push([p.lat,p.lon]);
 });
 
-const last = coords[coords.length-1];
+// SNAP TEEDELE
+const snappedCoords = await snapToRoad(coords);
 
+const last = snappedCoords[snappedCoords.length-1];
+
+
+// MARKER
 if(!marker){
 
 marker = L.marker(last).addTo(map);
@@ -106,23 +159,26 @@ marker.setLatLng(last);
 let lastPoint = data[data.length-1];
 
 marker.bindPopup(
-"Time: " + lastPoint.time +
+"<b>GPS Tracker</b>" +
+"<br>Time: " + lastPoint.time +
 "<br>Battery: " + lastPoint.battery +
 "<br>Signal: " + lastPoint.signal +
 "<br>Status: " + lastPoint.status
 );
 
+
+// TRAJEKTOOR
 if(trackLine){
-
 map.removeLayer(trackLine);
-
 }
 
-trackLine = L.polyline(coords,{
+trackLine = L.polyline(snappedCoords,{
 color:"red",
 weight:4
 }).addTo(map);
 
+
+// ZOOM ainult esimesel laadimisel
 if(firstLoad){
 
 map.setView(last,15);
@@ -138,10 +194,11 @@ console.log("API error",e);
 
 }
 
-// esimene laadimine
+
+// ESIMENE LAADIMINE
 loadData();
 
-// auto refresh
+// AUTO REFRESH
 setInterval(loadData,5000);
 
 </script>
