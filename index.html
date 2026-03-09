@@ -188,22 +188,31 @@ function updateUI(useOSRM = true) {
   
   document.getElementById("batteryPercent").innerHTML = pct.toFixed(0) + "%";
   
-  // LEVI
-  let sigVal = current.signal;
-  let isCSQ = (sigVal >= 0 && sigVal <= 31 && !String(sigVal).includes("-"));
-  let dbm = isCSQ ? (-113 + (sigVal * 2)) : parseInt(sigVal) || -100;
-  
-  let minDbm = -90; 
-  let maxDbm = -50; 
-  let sigPct = ((dbm - minDbm) / (maxDbm - minDbm)) * 100;
-  sigPct = Math.max(0, Math.min(100, sigPct));
-  
+  // LEVI (Standardne CSQ 0-31 loogika)
+  let sigVal = parseInt(current.signal);
   let sBar = document.getElementById("signalBar");
-  sBar.style.width = sigPct + "%";
-  if (sigPct > 60) sBar.style.backgroundColor = "#4caf50"; 
-  else if (sigPct > 30) sBar.style.backgroundColor = "#ff9800"; 
-  else sBar.style.backgroundColor = "#f44336"; 
-  document.getElementById("signalText").innerHTML = (dbm < 0 ? dbm : "-" + dbm) + " dBm";
+  let sText = document.getElementById("signalText");
+
+  if (sigVal === 99 || isNaN(sigVal) || sigVal === 0) {
+      sBar.style.width = "0%";
+      sBar.style.backgroundColor = "#f44336";
+      sText.innerHTML = "Levi puudub";
+  } else {
+      // Protsent skaalal 0-31
+      let sigPct = (sigVal / 31) * 100;
+      sigPct = Math.max(0, Math.min(100, sigPct));
+      
+      // Teisendus kuvamiseks dBm-iks
+      let dbm = -113 + (sigVal * 2);
+      
+      sBar.style.width = sigPct + "%";
+      
+      if (sigVal > 20) sBar.style.backgroundColor = "#4caf50"; 
+      else if (sigVal > 10) sBar.style.backgroundColor = "#ff9800"; 
+      else sBar.style.backgroundColor = "#f44336"; 
+      
+      sText.innerHTML = dbm + " dBm";
+  }
 
   // KAART
   const start = Math.max(0, currentIndex - trailLength + 1);
@@ -294,8 +303,8 @@ function drawBatteryChart() {
       scales: {
         x: { display: false },
         y: { 
-          min: 3.0,  // Skaala algus 3.0V
-          max: 4.5,  // Skaala lõpp 4.5V
+          min: 3.0, 
+          max: 4.5, 
           ticks: { color: '#666', stepSize: 0.25 },
           grid: { color: '#222' }
         }
