@@ -26,7 +26,7 @@
   
   .mini-label { font-size: 10px; color: #aaa; margin-bottom: 2px; }
 
-  /* PROGRESS BAR (Aku ja Levi) */
+  /* PROGRESS BAR */
   .progress { width: 100%; height: 10px; background: #444; border-radius: 5px; overflow: hidden; margin-top: 2px; }
   .progressBar { height: 100%; background: #4caf50; width: 0%; transition: width 0.5s, background-color 0.5s; }
 
@@ -99,7 +99,6 @@
 
 <script>
 /* SEADED */
-// Suurendasin limiiti 1500 peale, et 48h andmeid paremini kätte saada (sõltub muidugi salvestustihedusest)
 const FETCH_LIMIT = 1500; 
 const API_URL = "https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=" + FETCH_LIMIT;
 
@@ -148,7 +147,6 @@ async function loadData(isAutoUpdate = false) {
     const data = await res.json();
     if (!data || data.length === 0) return;
 
-    // Filtreerime välja vigased punktid, kus lat või lon on puudu
     rawPoints = data.filter(p => p.lat && p.lon);
     
     const oldMax = tSlider.max;
@@ -176,10 +174,10 @@ function updateUI(useOSRM = true) {
   const t = new Date(current.time || current.timestamp);
   document.getElementById("timeIndicator").innerHTML = t.toLocaleString('et-EE');
   
-  // AKU
+  // AKU (LOOGIKA: 4.2V = 100%, 3.5V = 0%)
   const v = current.battery || current.vbat || 0;
   const volt = v > 100 ? v / 1000 : v;
-  let pct = ((volt - 3.3) / (4.2 - 3.3)) * 100;
+  let pct = ((volt - 3.5) / (4.2 - 3.5)) * 100;
   pct = Math.max(0, Math.min(100, pct));
   
   let batBar = document.getElementById("batteryBar");
@@ -190,30 +188,21 @@ function updateUI(useOSRM = true) {
   
   document.getElementById("batteryPercent").innerHTML = pct.toFixed(0) + "%";
   
-  // LEVI (CSQ või dBm loogika)
-  // Kui seade saadab CSQ (0-31), teisendame selle ligikaudseks dBm väärtuseks.
-  // Tavaliselt: dBm = -113 + (CSQ * 2). Ehk CSQ 31 on u -51dBm.
+  // LEVI
   let sigVal = current.signal;
   let isCSQ = (sigVal >= 0 && sigVal <= 31 && !String(sigVal).includes("-"));
   let dbm = isCSQ ? (-113 + (sigVal * 2)) : parseInt(sigVal) || -100;
   
-  // Nõue: < -80dBm on halb (punane, tühjem). > -30dBm on ideaalne (roheline, täis).
-  // Seame piirid: halb = -90 (või väiksem), hea = -50 (või suurem) - need on realistlikumad LTE väärtused.
-  // Aga järgime sinu soovi: 30 on põhjas (või noh, -30), 80 on halb (või -80). 
-  // LTE signaalid on alati negatiivsed (nt -65 dBm).
-  let minDbm = -90; // Riba tühi
-  let maxDbm = -50; // Riba täis
-  
+  let minDbm = -90; 
+  let maxDbm = -50; 
   let sigPct = ((dbm - minDbm) / (maxDbm - minDbm)) * 100;
   sigPct = Math.max(0, Math.min(100, sigPct));
   
   let sBar = document.getElementById("signalBar");
   sBar.style.width = sigPct + "%";
-  
-  if (sigPct > 60) sBar.style.backgroundColor = "#4caf50"; // Hea
-  else if (sigPct > 30) sBar.style.backgroundColor = "#ff9800"; // Keskmine
-  else sBar.style.backgroundColor = "#f44336"; // Nõrk
-  
+  if (sigPct > 60) sBar.style.backgroundColor = "#4caf50"; 
+  else if (sigPct > 30) sBar.style.backgroundColor = "#ff9800"; 
+  else sBar.style.backgroundColor = "#f44336"; 
   document.getElementById("signalText").innerHTML = (dbm < 0 ? dbm : "-" + dbm) + " dBm";
 
   // KAART
@@ -222,7 +211,7 @@ function updateUI(useOSRM = true) {
   drawMap(points, useOSRM);
 }
 
-/* TÄIUSTATUD KAARDI JOONISTAMINE (OSRM ROUTE) */
+/* OSRM ROUTE */
 async function drawMap(points, useOSRM) {
   if (routeLine) map.removeLayer(routeLine);
   if (points.length === 0) return;
@@ -231,65 +220,40 @@ async function drawMap(points, useOSRM) {
 
   if (useOSRM && points.length > 1) {
     try {
-      // OSRM 'route' teenus on stabiilsem kui 'match' hõredate punktide korral.
-      // OSRM limiit koordinaatidele ühes päringus on tavaliselt 100 ringis, aga route on andestavam.
-      // Eemaldame duplikaatkoordinaadid (kui seade seisab paigal), see ajab OSRM-i tihti lolliks.
       let uniquePoints = [];
       for(let i=0; i<points.length; i++) {
           if(i===0 || points[i].lat !== points[i-1].lat || points[i].lon !== points[i-1].lon) {
               uniquePoints.push(points[i]);
           }
       }
-      
-      // Piirame punktide arvu päringus (nt 50 viimast unikaalset)
       let segment = uniquePoints.slice(-50); 
-      
       if(segment.length > 1) {
           const coords = segment.map(p => p.lon + "," + p.lat).join(";");
-          // route päring continues_straight=false abil vähendab veidraid tagasipöördeid
           const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&continue_straight=false`);
           const data = await res.json();
-          
           if (data.code === "Ok" && data.routes && data.routes.length > 0) {
             latlngs = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-          } else {
-             console.warn("OSRM Route ebaõnnestus (code:", data.code, "), joonistan otsepunktid.");
           }
       }
-    } catch(e) {
-      console.warn("OSRM Päringu viga:", e);
-    }
+    } catch(e) { console.warn("OSRM viga:", e); }
   }
 
-  // Joonistame sujuva joone
-  routeLine = L.polyline(latlngs, {
-    color: '#2196F3', // Muutsin siniseks, tihti paremini nähtav kaardil
-    weight: 5, 
-    opacity: 0.8,
-    lineJoin: 'round'
-  }).addTo(map);
-  
+  routeLine = L.polyline(latlngs, { color: '#2196F3', weight: 5, opacity: 0.8, lineJoin: 'round' }).addTo(map);
   const last = points[points.length - 1];
-  if (!marker) {
-    marker = L.marker([last.lat, last.lon]).addTo(map);
-  } else {
-    marker.setLatLng([last.lat, last.lon]);
-  }
+  if (!marker) marker = L.marker([last.lat, last.lon]).addTo(map);
+  else marker.setLatLng([last.lat, last.lon]);
 
-  if (currentIndex == tSlider.max) {
-    map.setView([last.lat, last.lon]);
-  }
+  if (currentIndex == tSlider.max) map.setView([last.lat, last.lon]);
 }
 
-/* GRAAFIKU JOONISTAMINE (48h) */
+/* GRAAFIKU JOONISTAMINE (Skaala: 3.0V - 4.5V) */
 function drawBatteryChart() {
   const ctx = document.getElementById("batteryChart").getContext('2d');
   if (batteryChartInstance) batteryChartInstance.destroy();
 
   const labels = [];
   const data = [];
-  let minV = 4.5, maxV = 0;
-  // Muudetud 48h peale (48 * 60 * 60 * 1000)
+  let minV = 5.0, maxV = 0;
   const limit48h = Date.now() - (48 * 60 * 60 * 1000);
 
   rawPoints.forEach(p => {
@@ -297,7 +261,7 @@ function drawBatteryChart() {
     if (time > limit48h) {
       let v = p.battery || p.vbat || 0;
       let volt = v > 100 ? v / 1000 : v;
-      if (volt > 2.0 && volt < 4.6) {
+      if (volt > 2.0 && volt < 5.0) {
         labels.push(""); 
         data.push(volt);
         if (volt < minV) minV = volt;
@@ -308,8 +272,6 @@ function drawBatteryChart() {
 
   if (data.length > 0) {
     document.getElementById("batteryStats").innerHTML = `Min: ${minV.toFixed(2)}V | Max: ${maxV.toFixed(2)}V`;
-  } else {
-    document.getElementById("batteryStats").innerHTML = `Andmed puuduvad`;
   }
 
   batteryChartInstance = new Chart(ctx, {
@@ -332,9 +294,9 @@ function drawBatteryChart() {
       scales: {
         x: { display: false },
         y: { 
-          min: 0, 
-          max: 4.5, 
-          ticks: { color: '#666', stepSize: 0.5 },
+          min: 3.0,  // Skaala algus 3.0V
+          max: 4.5,  // Skaala lõpp 4.5V
+          ticks: { color: '#666', stepSize: 0.25 },
           grid: { color: '#222' }
         }
       },
@@ -343,10 +305,8 @@ function drawBatteryChart() {
   });
 }
 
-/* START JA AUTO-REFRESH */
 loadData();
 setInterval(() => loadData(true), 20000);
-
 </script>
 </body>
 </html>
