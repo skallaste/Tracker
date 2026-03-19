@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>GPS Tracker - Stable Build</title>
+<title>GPS Tracker - PRO Build</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -16,10 +16,10 @@
   #panel {
     position: absolute; top: 0; right: 0; height: 100%; width: 75px; 
     background: rgba(30, 30, 30, 0.9); color: white; transition: width 0.3s;
-    z-index: 1000; overflow-x: hidden; backdrop-filter: blur(10px);
+    z-index: 1000; overflow-x: hidden; overflow-y: auto; backdrop-filter: blur(10px);
     box-shadow: -2px 0 15px rgba(0,0,0,0.5);
   }
-  #panel.open { width: 320px; }
+  #panel.open { width: 340px; } /* Tegin veidi laiemaks, et uus info ära mahuks */
 
   #mini { padding: 20px 10px; text-align: center; cursor: pointer; border-bottom: 1px solid #444; }
   .stat { margin: 15px 0; font-size: 14px; font-weight: bold; }
@@ -33,6 +33,12 @@
   #panelContent { padding: 20px; display: none; }
   #panel.open #panelContent { display: block; }
 
+  /* UUS: LISASTAATUSE GRID */
+  .statsGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+  .sg-item { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #333; }
+  .sg-label { font-size: 10px; color: #aaa; text-transform: uppercase; margin-bottom: 5px; }
+  .sg-val { font-size: 15px; font-weight: bold; color: #2196F3; }
+
   /* GRAAFIK */
   .graphBox { background: #000; padding: 10px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; }
   #batteryChart { width: 100% !important; height: 180px !important; }
@@ -41,7 +47,7 @@
   #batteryStats { color: #4caf50; font-weight: bold; }
 
   /* SLAIDERID */
-  .sliderBox { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; margin-top: 15px; }
+  .sliderBox { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; margin-top: 15px; border: 1px solid #333; }
   .sliderBox h3 { margin: 0 0 10px 0; font-size: 14px; color: #aaa; text-transform: uppercase; }
   input[type=range] { width: 100%; cursor: pointer; accent-color: #4caf50; }
   
@@ -59,19 +65,43 @@
     <div class="stat" id="clock">--:--</div>
     
     <div class="stat">
+      <div class="mini-label">OLEK</div>
+      <div id="statusText" style="margin-top:2px; font-size: 12px; font-weight: bold; color: #888;">--</div>
+    </div>
+
+    <div class="stat">
       <div class="mini-label">AKU</div>
       <div class="progress"><div class="progressBar" id="batteryBar"></div></div>
       <div id="batteryPercent" style="margin-top:2px; font-size: 12px;">--%</div>
     </div>
     
     <div class="stat">
-      <div class="mini-label">LEVI</div>
+      <div class="mini-label">LEVI (CSQ)</div>
       <div class="progress"><div class="progressBar" id="signalBar"></div></div>
-      <div id="signalText" style="margin-top:2px; font-size: 12px;">-- dBm</div>
+      <div id="signalText" style="margin-top:2px; font-size: 12px;">-- / 31</div>
     </div>
   </div>
 
   <div id="panelContent">
+    <div class="statsGrid">
+      <div class="sg-item">
+        <div class="sg-label">Kiirus</div>
+        <div class="sg-val" id="valSpeed">-- km/h</div>
+      </div>
+      <div class="sg-item">
+        <div class="sg-label">Kõrgus</div>
+        <div class="sg-val" id="valAlt">-- m</div>
+      </div>
+      <div class="sg-item">
+        <div class="sg-label">Satelliidid (Otsib/Fix)</div>
+        <div class="sg-val" id="valSat">-- / --</div>
+      </div>
+      <div class="sg-item">
+        <div class="sg-label">Toite Allikas</div>
+        <div class="sg-val" id="valCharge" style="color:#ff9800; font-size: 12px;">--</div>
+      </div>
+    </div>
+
     <div class="graphBox">
       <div class="graphHeader">
         <span>Aku pinge (48h)</span>
@@ -100,7 +130,7 @@
 <script>
 /* SEADED */
 const FETCH_LIMIT = 1500; 
-const API_URL = "https://script.google.com/macros/s/AKfycbz8VQ5E_QMY-g0vB8lDq254fKsRhqArHqO0MljJfE8Gg8Kd_UVPvFLMoLlqUjVxSJ604g/exec?api=points&points=" + FETCH_LIMIT;
+const API_URL = "https://script.google.com/macros/s/AKfycbzS5a7DaAP_dYJdg7-aJ_gAX6HNQsM0u4vOszeojYKGKuIadNiEhLoFBaWTEU8r9xKY/exec?api=points&points=" + FETCH_LIMIT;
 
 /* GLOBAALNE STAATUS */
 let rawPoints = [];
@@ -171,13 +201,43 @@ function updateUI(useOSRM = true) {
   const current = rawPoints[currentIndex];
 
   // KELLAAEG
-  const t = new Date(current.time || current.timestamp);
+  const t = new Date(current.time || current.timestamp || current.devicetime);
   document.getElementById("timeIndicator").innerHTML = t.toLocaleString('et-EE');
   
-  // AKU (LOOGIKA: 4.2V = 100%, 3.5V = 0%)
-  const v = current.battery || current.vbat || 0;
-  const volt = v > 100 ? v / 1000 : v;
-  let pct = ((volt - 3.5) / (4.2 - 3.5)) * 100;
+  // ================= UUS: OLEKU TÕLKIMINE =================
+  let rawStatus = (current.status || "--").replace(/_/g, " "); // Eemaldame alakriipsud
+  let stEl = document.getElementById("statusText");
+  
+  if (rawStatus.includes("Moving")) {
+    stEl.innerHTML = "LIIGUB";
+    stEl.style.color = "#4caf50";
+  } else if (rawStatus.includes("Stationary")) {
+    stEl.innerHTML = "PAIGAL";
+    stEl.style.color = "#ff9800";
+  } else if (rawStatus.includes("No GPS") || rawStatus.includes("No Fix")) {
+    stEl.innerHTML = "NO FIX";
+    stEl.style.color = "#f44336";
+  } else {
+    stEl.innerHTML = rawStatus;
+    stEl.style.color = "#888";
+  }
+
+  // ================= UUS: DETAILANDMED =================
+  document.getElementById("valSpeed").innerHTML = (current.speed || "0") + " km/h";
+  document.getElementById("valAlt").innerHTML = (current.alt || "0") + " m";
+  document.getElementById("valSat").innerHTML = (current.sat_v || "0") + " / " + (current.sat_u || "0");
+  
+  let chargeStr = (current.charging || "--").replace(/_/g, " ");
+  document.getElementById("valCharge").innerHTML = chargeStr;
+
+  // ================= AKU (PROTSENT JA LAADIMINE) =================
+  // Uus kood saadab 'batpct', aga igaks juhuks teeme ka manuaalse arvutuse
+  let pct = parseInt(current.batpct);
+  if (isNaN(pct)) {
+    const v = current.battery || current.bat || current.bat_v || 0;
+    const volt = v > 100 ? v / 1000 : v;
+    pct = ((volt - 3.3) / (4.2 - 3.3)) * 100;
+  }
   pct = Math.max(0, Math.min(100, pct));
   
   let batBar = document.getElementById("batteryBar");
@@ -186,41 +246,38 @@ function updateUI(useOSRM = true) {
   else if (pct > 20) batBar.style.backgroundColor = "#ff9800";
   else batBar.style.backgroundColor = "#f44336";
   
-  document.getElementById("batteryPercent").innerHTML = pct.toFixed(0) + "%";
+  // Lisame välgunoole, kui seade laeb
+  let isCharging = chargeStr.toLowerCase().includes("charg") || chargeStr.toLowerCase().includes("usb");
+  document.getElementById("batteryPercent").innerHTML = (isCharging ? "⚡ " : "") + pct.toFixed(0) + "%";
   
-  // LEVI (Standardne CSQ 0-31 loogika)
-  let sigVal = parseInt(current.signal);
+  // ================= LEVI (CSQ) =================
+  let sigVal = parseInt(current.csq || current.signal || 0);
   let sBar = document.getElementById("signalBar");
   let sText = document.getElementById("signalText");
 
   if (sigVal === 99 || isNaN(sigVal) || sigVal === 0) {
       sBar.style.width = "0%";
       sBar.style.backgroundColor = "#f44336";
-      sText.innerHTML = "Levi puudub";
+      sText.innerHTML = "Puudub";
   } else {
-      // Protsent skaalal 0-31
       let sigPct = (sigVal / 31) * 100;
       sigPct = Math.max(0, Math.min(100, sigPct));
       
-      // Teisendus kuvamiseks dBm-iks
-      let dbm = -113 + (sigVal * 2);
-      
       sBar.style.width = sigPct + "%";
-      
       if (sigVal > 20) sBar.style.backgroundColor = "#4caf50"; 
       else if (sigVal > 10) sBar.style.backgroundColor = "#ff9800"; 
       else sBar.style.backgroundColor = "#f44336"; 
       
-      sText.innerHTML = dbm + " dBm";
+      sText.innerHTML = sigVal + " / 31"; // Kuvame nüüd CSQ väärtuse 0-31
   }
 
-  // KAART
+  // ================= KAART =================
   const start = Math.max(0, currentIndex - trailLength + 1);
   const points = rawPoints.slice(start, currentIndex + 1);
   drawMap(points, useOSRM);
 }
 
-/* OSRM ROUTE */
+/* OSRM ROUTE (GeoJSON loogika jäi puutumata) */
 async function drawMap(points, useOSRM) {
   if (routeLine) map.removeLayer(routeLine);
   if (points.length === 0) return;
@@ -255,7 +312,7 @@ async function drawMap(points, useOSRM) {
   if (currentIndex == tSlider.max) map.setView([last.lat, last.lon]);
 }
 
-/* GRAAFIKU JOONISTAMINE (Skaala: 3.0V - 4.5V) */
+/* GRAAFIKU JOONISTAMINE */
 function drawBatteryChart() {
   const ctx = document.getElementById("batteryChart").getContext('2d');
   if (batteryChartInstance) batteryChartInstance.destroy();
@@ -266,9 +323,10 @@ function drawBatteryChart() {
   const limit48h = Date.now() - (48 * 60 * 60 * 1000);
 
   rawPoints.forEach(p => {
-    const time = new Date(p.time || p.timestamp).getTime();
+    const time = new Date(p.time || p.timestamp || p.devicetime).getTime();
     if (time > limit48h) {
-      let v = p.battery || p.vbat || 0;
+      // Arvestame uute väljanimedega (bat, battery, jne)
+      let v = p.bat || p.battery || p.vbat || 0;
       let volt = v > 100 ? v / 1000 : v;
       if (volt > 2.0 && volt < 5.0) {
         labels.push(""); 
