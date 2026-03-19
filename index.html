@@ -323,8 +323,8 @@ function drawBatteryChart() {
   rawPoints.forEach(p => {
     const time = new Date(p.time || p.timestamp || p.devicetime).getTime();
     if (time > limit48h) {
-      let v = p.bat || p.battery || p.vbat || 0;
-      let volt = v > 100 ? v / 1000 : v;
+      let v = parseFloat(p.bat || p.battery || p.vbat || 0);
+      let volt = (isNaN(v) || v < 1.0) ? 4.25 : (v > 100 ? v / 1000 : v);
       if (volt > 2.0 && volt < 5.0) {
         labels.push(""); 
         data.push(volt);
