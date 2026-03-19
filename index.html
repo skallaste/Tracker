@@ -12,45 +12,37 @@
   html, body { margin: 0; height: 100%; font-family: Arial, sans-serif; background: #1a1a1a; }
   #map { height: 100%; width: 100%; }
 
-  /* PANEEL */
   #panel {
     position: absolute; top: 0; right: 0; height: 100%; width: 75px; 
     background: rgba(30, 30, 30, 0.9); color: white; transition: width 0.3s;
     z-index: 1000; overflow-x: hidden; overflow-y: auto; backdrop-filter: blur(10px);
     box-shadow: -2px 0 15px rgba(0,0,0,0.5);
   }
-  #panel.open { width: 340px; } /* Tegin veidi laiemaks, et uus info ära mahuks */
+  #panel.open { width: 340px; }
 
   #mini { padding: 20px 10px; text-align: center; cursor: pointer; border-bottom: 1px solid #444; }
   .stat { margin: 15px 0; font-size: 14px; font-weight: bold; }
-  
   .mini-label { font-size: 10px; color: #aaa; margin-bottom: 2px; }
 
-  /* PROGRESS BAR */
   .progress { width: 100%; height: 10px; background: #444; border-radius: 5px; overflow: hidden; margin-top: 2px; }
   .progressBar { height: 100%; background: #4caf50; width: 0%; transition: width 0.5s, background-color 0.5s; }
 
   #panelContent { padding: 20px; display: none; }
   #panel.open #panelContent { display: block; }
 
-  /* UUS: LISASTAATUSE GRID */
   .statsGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
   .sg-item { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #333; }
   .sg-label { font-size: 10px; color: #aaa; text-transform: uppercase; margin-bottom: 5px; }
   .sg-val { font-size: 15px; font-weight: bold; color: #2196F3; }
 
-  /* GRAAFIK */
   .graphBox { background: #000; padding: 10px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; }
   #batteryChart { width: 100% !important; height: 180px !important; }
-  
   .graphHeader { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 10px; color: #888; }
   #batteryStats { color: #4caf50; font-weight: bold; }
 
-  /* SLAIDERID */
   .sliderBox { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; margin-top: 15px; border: 1px solid #333; }
   .sliderBox h3 { margin: 0 0 10px 0; font-size: 14px; color: #aaa; text-transform: uppercase; }
   input[type=range] { width: 100%; cursor: pointer; accent-color: #4caf50; }
-  
   #pointCount, #timeIndicator { text-align: center; margin-top: 10px; font-weight: bold; font-size: 13px; }
   #timeIndicator { color: #2196F3; }
 </style>
@@ -177,7 +169,10 @@ async function loadData(isAutoUpdate = false) {
     const data = await res.json();
     if (!data || data.length === 0) return;
 
-    rawPoints = data.filter(p => p.lat && p.lon);
+    // MUUDATUS 1: Ei filtreeri välja 0-koordinaatidega punkte.
+    // Kõik punktid jäävad alles staatuse, aku ja levi kuvamiseks.
+    // Kaardi filter toimub eraldi updateUI()-s.
+    rawPoints = data.filter(p => p.lat !== undefined);
     
     const oldMax = tSlider.max;
     const oldVal = tSlider.value;
@@ -204,8 +199,8 @@ function updateUI(useOSRM = true) {
   const t = new Date(current.time || current.timestamp || current.devicetime);
   document.getElementById("timeIndicator").innerHTML = t.toLocaleString('et-EE');
   
-  // ================= UUS: OLEKU TÕLKIMINE =================
-  let rawStatus = (current.status || "--").replace(/_/g, " "); // Eemaldame alakriipsud
+  // OLEKU TÕLKIMINE
+  let rawStatus = (current.status || "--").replace(/_/g, " ");
   let stEl = document.getElementById("statusText");
   
   if (rawStatus.includes("Moving")) {
@@ -222,7 +217,7 @@ function updateUI(useOSRM = true) {
     stEl.style.color = "#888";
   }
 
-  // ================= UUS: DETAILANDMED =================
+  // DETAILANDMED
   document.getElementById("valSpeed").innerHTML = (current.speed || "0") + " km/h";
   document.getElementById("valAlt").innerHTML = (current.alt || "0") + " m";
   document.getElementById("valSat").innerHTML = (current.sat_v || "0") + " / " + (current.sat_u || "0");
@@ -230,8 +225,7 @@ function updateUI(useOSRM = true) {
   let chargeStr = (current.charging || "--").replace(/_/g, " ");
   document.getElementById("valCharge").innerHTML = chargeStr;
 
-  // ================= AKU (PROTSENT JA LAADIMINE) =================
-  // Uus kood saadab 'batpct', aga igaks juhuks teeme ka manuaalse arvutuse
+  // AKU (PROTSENT JA LAADIMINE)
   let pct = parseInt(current.batpct);
   if (isNaN(pct)) {
     const v = current.battery || current.bat || current.bat_v || 0;
@@ -246,38 +240,42 @@ function updateUI(useOSRM = true) {
   else if (pct > 20) batBar.style.backgroundColor = "#ff9800";
   else batBar.style.backgroundColor = "#f44336";
   
-  // Lisame välgunoole, kui seade laeb
   let isCharging = chargeStr.toLowerCase().includes("charg") || chargeStr.toLowerCase().includes("usb");
   document.getElementById("batteryPercent").innerHTML = (isCharging ? "⚡ " : "") + pct.toFixed(0) + "%";
   
-  // ================= LEVI (CSQ) =================
+  // LEVI (CSQ)
   let sigVal = parseInt(current.csq || current.signal || 0);
   let sBar = document.getElementById("signalBar");
   let sText = document.getElementById("signalText");
 
   if (sigVal === 99 || isNaN(sigVal) || sigVal === 0) {
-      sBar.style.width = "0%";
-      sBar.style.backgroundColor = "#f44336";
-      sText.innerHTML = "Puudub";
+    sBar.style.width = "0%";
+    sBar.style.backgroundColor = "#f44336";
+    sText.innerHTML = "Puudub";
   } else {
-      let sigPct = (sigVal / 31) * 100;
-      sigPct = Math.max(0, Math.min(100, sigPct));
-      
-      sBar.style.width = sigPct + "%";
-      if (sigVal > 20) sBar.style.backgroundColor = "#4caf50"; 
-      else if (sigVal > 10) sBar.style.backgroundColor = "#ff9800"; 
-      else sBar.style.backgroundColor = "#f44336"; 
-      
-      sText.innerHTML = sigVal + " / 31"; // Kuvame nüüd CSQ väärtuse 0-31
+    let sigPct = (sigVal / 31) * 100;
+    sigPct = Math.max(0, Math.min(100, sigPct));
+    sBar.style.width = sigPct + "%";
+    if (sigVal > 20) sBar.style.backgroundColor = "#4caf50"; 
+    else if (sigVal > 10) sBar.style.backgroundColor = "#ff9800"; 
+    else sBar.style.backgroundColor = "#f44336"; 
+    sText.innerHTML = sigVal + " / 31";
   }
 
-  // ================= KAART =================
+  // KAART
   const start = Math.max(0, currentIndex - trailLength + 1);
   const points = rawPoints.slice(start, currentIndex + 1);
-  drawMap(points, useOSRM);
+
+  // MUUDATUS 2: Kaardile saadetakse ainult päris koordinaatidega punktid.
+  // rawPoints jääb puutumata - staatus/aku/levi kuvatakse kõigist punktidest.
+  const mapPoints = points.filter(p =>
+    Math.abs(parseFloat(p.lat)) > 0.001 &&
+    Math.abs(parseFloat(p.lon)) > 0.001
+  );
+  drawMap(mapPoints, useOSRM);
 }
 
-/* OSRM ROUTE (GeoJSON loogika jäi puutumata) */
+/* OSRM ROUTE */
 async function drawMap(points, useOSRM) {
   if (routeLine) map.removeLayer(routeLine);
   if (points.length === 0) return;
@@ -288,18 +286,18 @@ async function drawMap(points, useOSRM) {
     try {
       let uniquePoints = [];
       for(let i=0; i<points.length; i++) {
-          if(i===0 || points[i].lat !== points[i-1].lat || points[i].lon !== points[i-1].lon) {
-              uniquePoints.push(points[i]);
-          }
+        if(i===0 || points[i].lat !== points[i-1].lat || points[i].lon !== points[i-1].lon) {
+          uniquePoints.push(points[i]);
+        }
       }
       let segment = uniquePoints.slice(-50); 
       if(segment.length > 1) {
-          const coords = segment.map(p => p.lon + "," + p.lat).join(";");
-          const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&continue_straight=false`);
-          const data = await res.json();
-          if (data.code === "Ok" && data.routes && data.routes.length > 0) {
-            latlngs = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-          }
+        const coords = segment.map(p => p.lon + "," + p.lat).join(";");
+        const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&continue_straight=false`);
+        const data = await res.json();
+        if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+          latlngs = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+        }
       }
     } catch(e) { console.warn("OSRM viga:", e); }
   }
@@ -325,7 +323,6 @@ function drawBatteryChart() {
   rawPoints.forEach(p => {
     const time = new Date(p.time || p.timestamp || p.devicetime).getTime();
     if (time > limit48h) {
-      // Arvestame uute väljanimedega (bat, battery, jne)
       let v = p.bat || p.battery || p.vbat || 0;
       let volt = v > 100 ? v / 1000 : v;
       if (volt > 2.0 && volt < 5.0) {
