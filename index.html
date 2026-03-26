@@ -40,6 +40,39 @@
   .graphHeader { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 10px; color: #888; }
   #batteryStats { color: #4caf50; font-weight: bold; }
 
+  .envGrid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 20px; }
+  .env-card {
+    background: rgba(255,255,255,0.05); border: 1px solid #333; border-radius: 8px;
+    padding: 10px 6px; text-align: center; cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .env-card:hover { background: rgba(255,255,255,0.12); border-color: #555; }
+  .env-label { font-size: 9px; color: #aaa; text-transform: uppercase; margin-bottom: 4px; }
+  .env-val { font-size: 15px; font-weight: bold; color: #ff9800; margin-bottom: 5px; }
+  .env-stats { font-size: 9px; color: #666; line-height: 1.6; }
+  .env-hint { font-size: 8px; color: #444; margin-top: 5px; }
+
+  .popup-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.75); z-index: 2000;
+  }
+  .popup-overlay.active { display: block; }
+  .popup-box {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: #1e1e1e; border: 1px solid #444; border-radius: 12px;
+    padding: 20px; width: 90%; max-width: 460px;
+  }
+  .popup-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .popup-title { font-size: 14px; font-weight: bold; color: #ddd; }
+  .popup-close { cursor: pointer; color: #888; font-size: 22px; line-height: 1; }
+  .popup-close:hover { color: #fff; }
+  .popup-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .pstat { background: rgba(255,255,255,0.05); border-radius: 6px; padding: 10px; text-align: center; }
+  .pstat-label { font-size: 9px; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+  .pstat-val { font-size: 16px; font-weight: bold; color: #ff9800; }
+  .popup-chart-wrap { background: #000; border-radius: 8px; padding: 10px; position: relative; height: 200px; }
+  .popup-chart-wrap canvas { width: 100% !important; height: 100% !important; }
+
   .sliderBox { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; margin-top: 15px; border: 1px solid #333; }
   .sliderBox h3 { margin: 0 0 10px 0; font-size: 14px; color: #aaa; text-transform: uppercase; }
   input[type=range] { width: 100%; cursor: pointer; accent-color: #4caf50; }
@@ -49,7 +82,6 @@
 </head>
 
 <body>
-
 <div id="map"></div>
 
 <div id="panel">
@@ -72,6 +104,21 @@
       <div class="progress"><div class="progressBar" id="signalBar"></div></div>
       <div id="signalText" style="margin-top:2px; font-size: 12px;">-- / 31</div>
     </div>
+
+    <div class="stat">
+      <div class="mini-label">TEMP</div>
+      <div id="miniTemp" style="font-size: 13px; font-weight: bold; color: #ff9800;">-- °C</div>
+    </div>
+
+    <div class="stat">
+      <div class="mini-label">NIISKUS</div>
+      <div id="miniHumidity" style="font-size: 13px; font-weight: bold; color: #2196F3;">-- %</div>
+    </div>
+
+    <div class="stat">
+      <div class="mini-label">RÕHK</div>
+      <div id="miniPressure" style="font-size: 13px; font-weight: bold; color: #9c27b0;">-- hPa</div>
+    </div>
   </div>
 
   <div id="panelContent">
@@ -91,6 +138,30 @@
       <div class="sg-item">
         <div class="sg-label">Toite Allikas</div>
         <div class="sg-val" id="valCharge" style="color:#ff9800; font-size: 12px;">--</div>
+      </div>
+    </div>
+
+    <div style="font-size: 10px; color: #555; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
+      Ilmaandmed (48h) — vajuta graafikuks
+    </div>
+    <div class="envGrid">
+      <div class="env-card" onclick="openPopup('temp')">
+        <div class="env-label">Temp</div>
+        <div class="env-val" id="envTemp" style="color:#ff9800;">-- °C</div>
+        <div class="env-stats" id="envTempStats">Min: --<br>Max: --<br>Kesk: --</div>
+        <div class="env-hint">▲ graafik</div>
+      </div>
+      <div class="env-card" onclick="openPopup('humidity')">
+        <div class="env-label">Niiskus</div>
+        <div class="env-val" id="envHumidity" style="color:#2196F3;">-- %</div>
+        <div class="env-stats" id="envHumidityStats">Min: --<br>Max: --<br>Kesk: --</div>
+        <div class="env-hint">▲ graafik</div>
+      </div>
+      <div class="env-card" onclick="openPopup('pressure')">
+        <div class="env-label">Rõhk</div>
+        <div class="env-val" id="envPressure" style="color:#9c27b0;">-- hPa</div>
+        <div class="env-stats" id="envPressureStats">Min: --<br>Max: --<br>Kesk: --</div>
+        <div class="env-hint">▲ graafik</div>
       </div>
     </div>
 
@@ -119,61 +190,78 @@
   </div>
 </div>
 
+<!-- Popup -->
+<div class="popup-overlay" id="popupOverlay" onclick="closePopupOnOverlay(event)">
+  <div class="popup-box">
+    <div class="popup-header">
+      <span class="popup-title" id="popupTitle">--</span>
+      <span class="popup-close" onclick="closePopup()">✕</span>
+    </div>
+    <div class="popup-stats">
+      <div class="pstat">
+        <div class="pstat-label">Hetkeline</div>
+        <div class="pstat-val" id="pstatCurrent">--</div>
+      </div>
+      <div class="pstat">
+        <div class="pstat-label">Min (48h)</div>
+        <div class="pstat-val" id="pstatMin">--</div>
+      </div>
+      <div class="pstat">
+        <div class="pstat-label">Max (48h)</div>
+        <div class="pstat-val" id="pstatMax">--</div>
+      </div>
+    </div>
+    <div class="popup-chart-wrap">
+      <canvas id="popupChart"></canvas>
+    </div>
+  </div>
+</div>
+
 <script>
-/* SEADED */
-const FETCH_LIMIT = 1500; 
+const FETCH_LIMIT = 1500;
 const API_URL = "https://script.google.com/macros/s/AKfycbzS5a7DaAP_dYJdg7-aJ_gAX6HNQsM0u4vOszeojYKGKuIadNiEhLoFBaWTEU8r9xKY/exec?api=points&points=" + FETCH_LIMIT;
 
-/* GLOBAALNE STAATUS */
 let rawPoints = [];
 let trailLength = 50;
 let currentIndex = 0;
 let marker = null;
 let routeLine = null;
 let batteryChartInstance = null;
+let popupChartInstance = null;
+let envStats = { temp: {}, humidity: {}, pressure: {} };
 
-/* MAP INIT */
 let map = L.map('map', { zoomControl: false });
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 map.setView([58.6, 25.0], 7);
 
-/* PANEELI AVAMINE */
 document.getElementById("mini").onclick = () => document.getElementById("panel").classList.toggle("open");
 
-/* KELL PANEELIL */
 setInterval(() => {
   document.getElementById("clock").innerHTML = new Date().toLocaleTimeString('et-EE', {hour12: false});
 }, 1000);
 
-/* SLAIDERID */
 const pSlider = document.getElementById("pointSlider");
 const tSlider = document.getElementById("timeSlider");
 
 pSlider.oninput = function() {
   trailLength = parseInt(this.value);
   document.getElementById("pointCount").innerHTML = trailLength;
-  updateUI(false); 
+  updateUI(false);
 };
 pSlider.onchange = () => updateUI(true);
-
 tSlider.oninput = function() {
   currentIndex = parseInt(this.value);
   updateUI(false);
 };
 tSlider.onchange = () => updateUI(true);
 
-/* ANDMETE LAADIMINE */
 async function loadData(isAutoUpdate = false) {
   try {
     const res = await fetch(API_URL);
     const data = await res.json();
     if (!data || data.length === 0) return;
 
-    // MUUDATUS 1: Ei filtreeri välja 0-koordinaatidega punkte.
-    // Kõik punktid jäävad alles staatuse, aku ja levi kuvamiseks.
-    // Kaardi filter toimub eraldi updateUI()-s.
     rawPoints = data.filter(p => p.lat !== undefined);
-    
     const oldMax = tSlider.max;
     const oldVal = tSlider.value;
     tSlider.max = rawPoints.length - 1;
@@ -183,186 +271,254 @@ async function loadData(isAutoUpdate = false) {
       currentIndex = rawPoints.length - 1;
       updateUI(true);
     }
-    
+
     drawBatteryChart();
+    calcEnvStats();
+    updateEnvCards();
   } catch (e) {
     console.error("Viga andmetega:", e);
   }
 }
 
-/* UI UUENDAMINE */
+function calcEnvStats() {
+  const limit48h = Date.now() - (48 * 60 * 60 * 1000);
+  ['temp','humidity','pressure'].forEach(k => {
+    let vals = [];
+    rawPoints.forEach(p => {
+      const t = new Date(p.time || p.devicetime).getTime();
+      const v = parseFloat(p[k]);
+      if (t > limit48h && !isNaN(v) && v !== 0) vals.push(v);
+    });
+    if (vals.length > 0) {
+      envStats[k] = {
+        min: Math.min(...vals),
+        max: Math.max(...vals),
+        avg: vals.reduce((a,b) => a+b, 0) / vals.length,
+        ok: true
+      };
+    } else {
+      envStats[k] = { ok: false };
+    }
+  });
+}
+
+function getLastEnvPoint() {
+  for (let i = rawPoints.length - 1; i >= 0; i--) {
+    const p = rawPoints[i];
+    if (p.temp && parseFloat(p.temp) !== 0) return p;
+  }
+  return null;
+}
+
+function updateEnvCards() {
+  const lastEnv = getLastEnvPoint();
+
+  if (lastEnv) {
+    const t = parseFloat(lastEnv.temp).toFixed(1);
+    const h = parseFloat(lastEnv.humidity).toFixed(0);
+    const pr = parseFloat(lastEnv.pressure).toFixed(1);
+    document.getElementById("miniTemp").innerHTML     = t + " °C";
+    document.getElementById("miniHumidity").innerHTML = h + " %";
+    document.getElementById("miniPressure").innerHTML = pr + " hPa";
+    document.getElementById("envTemp").innerHTML      = t + " °C";
+    document.getElementById("envHumidity").innerHTML  = h + " %";
+    document.getElementById("envPressure").innerHTML  = pr + " hPa";
+  }
+
+  const cfg = {
+    temp:     { el: "envTempStats",     unit: "°C",  dec: 1 },
+    humidity: { el: "envHumidityStats", unit: "%",   dec: 0 },
+    pressure: { el: "envPressureStats", unit: " hPa", dec: 0 }
+  };
+  Object.keys(cfg).forEach(k => {
+    const s = envStats[k];
+    const c = cfg[k];
+    if (s.ok) {
+      document.getElementById(c.el).innerHTML =
+        "Min: " + s.min.toFixed(c.dec) + c.unit + "<br>" +
+        "Max: " + s.max.toFixed(c.dec) + c.unit + "<br>" +
+        "Kesk: " + s.avg.toFixed(c.dec) + c.unit;
+    }
+  });
+}
+
+const popupCfg = {
+  temp:     { title: "Temperatuur (48h)",  unit: " °C",  color: "#ff9800", dec: 1 },
+  humidity: { title: "Õhuniiskus (48h)",   unit: " %",   color: "#2196F3", dec: 0 },
+  pressure: { title: "Õhurõhk (48h)",     unit: " hPa", color: "#9c27b0", dec: 1 }
+};
+
+function openPopup(key) {
+  const cfg = popupCfg[key];
+  document.getElementById("popupTitle").innerHTML = cfg.title;
+  document.getElementById("popupOverlay").classList.add("active");
+
+  const lastEnv = getLastEnvPoint();
+  const s = envStats[key];
+
+  document.getElementById("pstatCurrent").style.color = cfg.color;
+  document.getElementById("pstatMin").style.color     = cfg.color;
+  document.getElementById("pstatMax").style.color     = cfg.color;
+
+  document.getElementById("pstatCurrent").innerHTML =
+    lastEnv ? parseFloat(lastEnv[key]).toFixed(cfg.dec) + cfg.unit : "--";
+  document.getElementById("pstatMin").innerHTML = s.ok ? s.min.toFixed(cfg.dec) + cfg.unit : "--";
+  document.getElementById("pstatMax").innerHTML = s.ok ? s.max.toFixed(cfg.dec) + cfg.unit : "--";
+
+  const limit48h = Date.now() - (48 * 60 * 60 * 1000);
+  const labels = [], vals = [];
+  rawPoints.forEach(p => {
+    const t = new Date(p.time || p.devicetime).getTime();
+    const v = parseFloat(p[key]);
+    if (t > limit48h && !isNaN(v) && v !== 0) {
+      labels.push(new Date(t).toLocaleTimeString('et-EE', {hour:'2-digit', minute:'2-digit'}));
+      vals.push(parseFloat(v.toFixed(cfg.dec)));
+    }
+  });
+
+  const ctx = document.getElementById("popupChart").getContext("2d");
+  if (popupChartInstance) popupChartInstance.destroy();
+  popupChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{ data: vals, borderColor: cfg.color, borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.2 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { ticks: { color: "#555", maxTicksLimit: 6 }, grid: { color: "#111" } },
+        y: { ticks: { color: "#666" }, grid: { color: "#222" } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+function closePopup() {
+  document.getElementById("popupOverlay").classList.remove("active");
+  if (popupChartInstance) { popupChartInstance.destroy(); popupChartInstance = null; }
+}
+
+function closePopupOnOverlay(e) {
+  if (e.target === document.getElementById("popupOverlay")) closePopup();
+}
+
 function updateUI(useOSRM = true) {
   if (rawPoints.length === 0) return;
   const current = rawPoints[currentIndex];
 
-  // KELLAAEG
   const t = new Date(current.time || current.timestamp || current.devicetime);
   document.getElementById("timeIndicator").innerHTML = t.toLocaleString('et-EE');
-  
-  // OLEKU TÕLKIMINE
+
   let rawStatus = (current.status || "--").replace(/_/g, " ");
   let stEl = document.getElementById("statusText");
-  
   if (rawStatus.includes("Moving")) {
-    stEl.innerHTML = "LIIGUB";
-    stEl.style.color = "#4caf50";
+    stEl.innerHTML = "LIIGUB"; stEl.style.color = "#4caf50";
   } else if (rawStatus.includes("Stationary")) {
-    stEl.innerHTML = "PAIGAL";
-    stEl.style.color = "#ff9800";
+    stEl.innerHTML = "PAIGAL"; stEl.style.color = "#ff9800";
   } else if (rawStatus.includes("No GPS") || rawStatus.includes("No Fix")) {
-    stEl.innerHTML = "NO FIX";
-    stEl.style.color = "#f44336";
+    stEl.innerHTML = "NO FIX"; stEl.style.color = "#f44336";
   } else {
-    stEl.innerHTML = rawStatus;
-    stEl.style.color = "#888";
+    stEl.innerHTML = rawStatus; stEl.style.color = "#888";
   }
 
-  // DETAILANDMED
   document.getElementById("valSpeed").innerHTML = (current.speed || "0") + " km/h";
   document.getElementById("valAlt").innerHTML = (current.alt || "0") + " m";
   document.getElementById("valSat").innerHTML = (current.sat_v || "0") + " / " + (current.sat_u || "0");
-  
   let chargeStr = (current.charging || "--").replace(/_/g, " ");
   document.getElementById("valCharge").innerHTML = chargeStr;
 
-  // AKU (PROTSENT JA LAADIMINE)
   let pct = parseInt(current.batpct);
   if (isNaN(pct)) {
-    const v = current.battery || current.bat || current.bat_v || 0;
+    const v = current.battery || current.bat || 0;
     const volt = v > 100 ? v / 1000 : v;
     pct = ((volt - 3.3) / (4.2 - 3.3)) * 100;
   }
   pct = Math.max(0, Math.min(100, pct));
-  
   let batBar = document.getElementById("batteryBar");
   batBar.style.width = pct + "%";
-  if (pct > 50) batBar.style.backgroundColor = "#4caf50";
-  else if (pct > 20) batBar.style.backgroundColor = "#ff9800";
-  else batBar.style.backgroundColor = "#f44336";
-  
+  batBar.style.backgroundColor = pct > 50 ? "#4caf50" : pct > 20 ? "#ff9800" : "#f44336";
   let isCharging = chargeStr.toLowerCase().includes("charg") || chargeStr.toLowerCase().includes("usb");
   document.getElementById("batteryPercent").innerHTML = (isCharging ? "⚡ " : "") + pct.toFixed(0) + "%";
-  
-  // LEVI (CSQ)
-  let sigVal = parseInt(current.csq || current.signal || 0);
-  let sBar = document.getElementById("signalBar");
-  let sText = document.getElementById("signalText");
 
+  let sigVal = parseInt(current.csq || 0);
+  let sBar = document.getElementById("signalBar");
   if (sigVal === 99 || isNaN(sigVal) || sigVal === 0) {
-    sBar.style.width = "0%";
-    sBar.style.backgroundColor = "#f44336";
-    sText.innerHTML = "Puudub";
+    sBar.style.width = "0%"; sBar.style.backgroundColor = "#f44336";
+    document.getElementById("signalText").innerHTML = "Puudub";
   } else {
-    let sigPct = (sigVal / 31) * 100;
-    sigPct = Math.max(0, Math.min(100, sigPct));
+    let sigPct = Math.max(0, Math.min(100, (sigVal / 31) * 100));
     sBar.style.width = sigPct + "%";
-    if (sigVal > 20) sBar.style.backgroundColor = "#4caf50"; 
-    else if (sigVal > 10) sBar.style.backgroundColor = "#ff9800"; 
-    else sBar.style.backgroundColor = "#f44336"; 
-    sText.innerHTML = sigVal + " / 31";
+    sBar.style.backgroundColor = sigVal > 20 ? "#4caf50" : sigVal > 10 ? "#ff9800" : "#f44336";
+    document.getElementById("signalText").innerHTML = sigVal + " / 31";
   }
 
-  // KAART
   const start = Math.max(0, currentIndex - trailLength + 1);
   const points = rawPoints.slice(start, currentIndex + 1);
-
-  // MUUDATUS 2: Kaardile saadetakse ainult päris koordinaatidega punktid.
-  // rawPoints jääb puutumata - staatus/aku/levi kuvatakse kõigist punktidest.
   const mapPoints = points.filter(p =>
-    Math.abs(parseFloat(p.lat)) > 0.001 &&
-    Math.abs(parseFloat(p.lon)) > 0.001
+    Math.abs(parseFloat(p.lat)) > 0.001 && Math.abs(parseFloat(p.lon)) > 0.001
   );
   drawMap(mapPoints, useOSRM);
 }
 
-/* OSRM ROUTE */
 async function drawMap(points, useOSRM) {
   if (routeLine) map.removeLayer(routeLine);
   if (points.length === 0) return;
-
   let latlngs = points.map(p => [p.lat, p.lon]);
-
   if (useOSRM && points.length > 1) {
     try {
-      let uniquePoints = [];
-      for(let i=0; i<points.length; i++) {
-        if(i===0 || points[i].lat !== points[i-1].lat || points[i].lon !== points[i-1].lon) {
-          uniquePoints.push(points[i]);
-        }
+      let unique = [];
+      for (let i = 0; i < points.length; i++) {
+        if (i === 0 || points[i].lat !== points[i-1].lat || points[i].lon !== points[i-1].lon)
+          unique.push(points[i]);
       }
-      let segment = uniquePoints.slice(-50); 
-      if(segment.length > 1) {
-        const coords = segment.map(p => p.lon + "," + p.lat).join(";");
+      let seg = unique.slice(-50);
+      if (seg.length > 1) {
+        const coords = seg.map(p => p.lon + "," + p.lat).join(";");
         const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&continue_straight=false`);
         const data = await res.json();
-        if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+        if (data.code === "Ok" && data.routes[0]) {
           latlngs = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
         }
       }
     } catch(e) { console.warn("OSRM viga:", e); }
   }
-
   routeLine = L.polyline(latlngs, { color: '#2196F3', weight: 5, opacity: 0.8, lineJoin: 'round' }).addTo(map);
   const last = points[points.length - 1];
   if (!marker) marker = L.marker([last.lat, last.lon]).addTo(map);
   else marker.setLatLng([last.lat, last.lon]);
-
   if (currentIndex == tSlider.max) map.setView([last.lat, last.lon]);
 }
 
-/* GRAAFIKU JOONISTAMINE */
 function drawBatteryChart() {
   const ctx = document.getElementById("batteryChart").getContext('2d');
   if (batteryChartInstance) batteryChartInstance.destroy();
-
-  const labels = [];
-  const data = [];
+  const labels = [], data = [];
   let minV = 5.0, maxV = 0;
   const limit48h = Date.now() - (48 * 60 * 60 * 1000);
-
   rawPoints.forEach(p => {
-    const time = new Date(p.time || p.timestamp || p.devicetime).getTime();
+    const time = new Date(p.time || p.devicetime).getTime();
     if (time > limit48h) {
-      let v = parseFloat(p.bat || p.battery || p.vbat || 0);
+      let v = parseFloat(p.bat || p.battery || 0);
       let volt = (isNaN(v) || v < 1.0) ? 4.25 : (v > 100 ? v / 1000 : v);
       if (volt > 2.0 && volt < 5.0) {
-        labels.push(""); 
-        data.push(volt);
+        labels.push(""); data.push(volt);
         if (volt < minV) minV = volt;
         if (volt > maxV) maxV = volt;
       }
     }
   });
-
-  if (data.length > 0) {
+  if (data.length > 0)
     document.getElementById("batteryStats").innerHTML = `Min: ${minV.toFixed(2)}V | Max: ${maxV.toFixed(2)}V`;
-  }
-
   batteryChartInstance = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: labels,
-      datasets: [{
-        data: data,
-        borderColor: '#4caf50',
-        borderWidth: 1.5,
-        pointRadius: 0,
-        fill: false,
-        tension: 0.2
-      }]
-    },
+    data: { labels, datasets: [{ data, borderColor: '#4caf50', borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.2 }] },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
+      responsive: true, maintainAspectRatio: false, animation: false,
       scales: {
         x: { display: false },
-        y: { 
-          min: 3.0, 
-          max: 4.5, 
-          ticks: { color: '#666', stepSize: 0.25 },
-          grid: { color: '#222' }
-        }
+        y: { min: 3.0, max: 4.5, ticks: { color: '#666', stepSize: 0.25 }, grid: { color: '#222' } }
       },
       plugins: { legend: { display: false } }
     }
